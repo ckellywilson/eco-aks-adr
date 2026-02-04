@@ -29,4 +29,5 @@ tags = {
   ManagedBy   = "Terraform"
   Purpose     = "AKS Spoke - Production"
 }
-admin_ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQC... (placeholder - replace with actual key)"
+# NOTE: Do not commit real SSH keys. Provide the actual admin_ssh_public_key via a non-committed tfvars file (e.g. prod.tfvars) or another secure mechanism.
+admin_ssh_public_key = ""
