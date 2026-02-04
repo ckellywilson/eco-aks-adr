@@ -116,7 +116,7 @@ resource "azurerm_subnet_network_security_group_association" "aks_nodes" {
 # AKS Cluster with Azure Verified Module
 module "aks_cluster" {
   source  = "Azure/avm-res-containerservice-managedcluster/azurerm"
-  version = "~> 0.3"
+  version = "~> 0.3.0"
 
   name      = var.aks_cluster_name
   location  = var.location
