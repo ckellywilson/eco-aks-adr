@@ -2,10 +2,22 @@
   "_comment": "This is an example customer configuration representing a production deployment using Model B (platform team provides infrastructure). The spoke Terraform code supports both Model A and Model B via the .example tfvars files in infra/terraform/spoke/",
   "hub": {
     "firewall": true,
+    "firewallPrivateIp": "10.0.1.4",
     "bastion": true,
-    "applicationGateway": true,
+    "applicationGateway": false,
+    "privateDnsResolver": {
+      "enabled": true,
+      "inboundEndpointIp": "10.0.6.4",
+      "inboundSubnet": "10.0.6.0/28",
+      "outboundEndpointIp": "10.0.7.4",
+      "outboundSubnet": "10.0.7.0/28",
+      "forwardingRules": [
+        "*.corp.ecolab.com",
+        "*.local"
+      ]
+    },
     "privateDnsZones": [
-      "privatelink.southcentralus.azmk8s.io",
+      "privatelink.eastus2.azmk8s.io",
       "privatelink.azurecr.io",
       "privatelink.vaultcore.azure.net",
       "privatelink.blob.core.windows.net",
@@ -17,7 +29,17 @@
       "privatelink.ods.opinsights.azure.com",
       "privatelink.agentsvc.azure-automation.net"
     ],
-    "location": "southcentralus",
+    "jumpBox": {
+      "enabled": true,
+      "vmSize": "Standard_D2s_v3",
+      "osType": "Ubuntu",
+      "osVersion": "22.04-LTS",
+      "customDns": "10.0.6.4",
+      "publicIp": false,
+      "accessMethod": "bastion"
+    },
+    "location": "eastus2",
+    "subscriptionModel": "same subscription, separate resource group",
     "environment": "prod",
     "enableSecurityCenter": true,
     "tags": {
@@ -37,6 +59,47 @@
     "privateCluster": true,
     "podCidr": "192.168.0.0/16",
     "ingressMethod": "applicationGateway",
+    "applicationGateway": {
+      "enabled": true,
+      "sku": "WAF_v2",
+      "tier": "WAF_v2",
+      "capacity": {
+        "min": 2,
+        "max": 10
+      },
+      "wafConfig": {
+        "enabled": true,
+        "firewallMode": "Prevention",
+        "ruleSetType": "OWASP",
+        "ruleSetVersion": "3.2"
+      },
+      "sslCertificates": {
+        "source": "keyVault"
+      }
+    },
+    "customDns": "10.0.6.4",
+    "jumpBox": {
+      "enabled": true,
+      "vmSize": "Standard_D2s_v3",
+      "osType": "Ubuntu",
+      "osVersion": "22.04-LTS",
+      "customDns": "10.0.6.4",
+      "publicIp": false,
+      "accessMethod": "bastion",
+      "tools": [
+        "kubectl",
+        "helm",
+        "azure-cli",
+        "kubelogin",
+        "terraform",
+        "git"
+      ]
+    },
+    "routing": {
+      "userDefinedRoutes": true,
+      "nextHopType": "VirtualAppliance",
+      "nextHopIpAddress": "10.0.1.4"
+    },
     "createResourceGroup": false,
     "createVirtualNetwork": false,
     "createVnetPeering": true,
@@ -45,7 +108,7 @@
     "egressSecurityLevel": "strict",
     "enableEncryptionAtHost": true,
     "enableDefender": true,
-    "location": "southcentralus",
+    "location": "eastus2",
     "environment": "prod",
     "tags": {
       "Environment": "Production",
