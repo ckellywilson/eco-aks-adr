@@ -89,7 +89,22 @@ echo ""
 log_info "=== Hub Infrastructure Validation ==="
 
 # Hub resource group
-HUB_RG="rg-hub-eus2-${ENVIRONMENT}"
+if [ -n "$HUB_RG_OVERRIDE" ]; then
+    # Allow explicit override of the hub resource group name (e.g. from CI or env config)
+    HUB_RG="$HUB_RG_OVERRIDE"
+    log_info "Using overridden hub resource group: $HUB_RG"
+else
+    # Try to discover a hub resource group by convention (any group starting with rg-hub-eus2-)
+    HUB_RG=$(az group list --query "[?starts_with(name, 'rg-hub-eus2-')].name | [0]" -o tsv 2>/dev/null || true)
+
+    if [ -z "$HUB_RG" ] || [ "$HUB_RG" == "null" ]; then
+        # Fallback to legacy pattern using the environment suffix
+        HUB_RG="rg-hub-eus2-${ENVIRONMENT}"
+        log_warning "Could not auto-discover hub resource group. Falling back to pattern: $HUB_RG"
+    else
+        log_info "Auto-discovered hub resource group: $HUB_RG"
+    fi
+fi
 if az group show -n "$HUB_RG" &> /dev/null; then
     log_success "Hub resource group exists: $HUB_RG"
 else
