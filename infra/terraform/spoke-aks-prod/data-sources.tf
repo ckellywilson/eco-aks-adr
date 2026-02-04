@@ -6,6 +6,7 @@ locals {
     hub_vnet_id                = null
     firewall_private_ip        = null
     log_analytics_workspace_id = null
+    dns_resolver_inbound_ip    = null
     private_dns_zone_ids       = {}
   })
 }
