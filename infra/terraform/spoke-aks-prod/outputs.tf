@@ -73,3 +73,33 @@ output "aks_kubelet_identity_client_id" {
   description = "Kubelet managed identity client ID"
   value       = azurerm_user_assigned_identity.aks_kubelet.client_id
 }
+
+output "acr_id" {
+  description = "Azure Container Registry resource ID"
+  value       = module.acr.resource_id
+}
+
+output "acr_name" {
+  description = "Azure Container Registry name"
+  value       = module.acr.name
+}
+
+output "key_vault_id" {
+  description = "Key Vault resource ID"
+  value       = module.key_vault.resource_id
+}
+
+output "key_vault_name" {
+  description = "Key Vault name"
+  value       = module.key_vault.name
+}
+
+output "spoke_jumpbox_private_ip" {
+  description = "Spoke jump box VM private IP address"
+  value       = azurerm_network_interface.spoke_jumpbox.private_ip_address
+}
+
+output "spoke_jumpbox_id" {
+  description = "Spoke jump box VM resource ID"
+  value       = azurerm_linux_virtual_machine.spoke_jumpbox.id
+}

@@ -153,6 +153,18 @@ variable "custom_dns_servers" {
   default     = []
 }
 
+variable "admin_username" {
+  description = "Admin username for jump box VMs"
+  type        = string
+  default     = "azureuser"
+}
+
+variable "admin_ssh_public_key" {
+  description = "SSH public key for jump box VM authentication"
+  type        = string
+  sensitive   = true
+}
+
 variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)

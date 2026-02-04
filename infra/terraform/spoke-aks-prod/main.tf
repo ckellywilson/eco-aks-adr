@@ -146,7 +146,7 @@ module "aks_cluster" {
     enable_auto_scaling    = false
     os_disk_size_gb        = 30
     os_type                = "Linux"
-    enable_host_encryption = true  # Enable host-based encryption
+    enable_host_encryption = true # Enable host-based encryption
   }
 
   # Network profile
@@ -236,4 +236,232 @@ module "aks_cluster" {
     azurerm_subnet_route_table_association.aks_nodes,
     azurerm_subnet_network_security_group_association.aks_nodes
   ]
+}
+
+# ===========================
+# Azure Container Registry
+# ===========================
+
+module "acr" {
+  source  = "Azure/avm-res-containerregistry-registry/azurerm"
+  version = "~> 0.3"
+
+  name                = "acr${var.environment}${local.location_code}${random_string.acr_suffix.result}"
+  location            = var.location
+  resource_group_name = azurerm_resource_group.aks_spoke.name
+
+  sku = "Premium" # Required for private endpoints
+
+  # Private endpoint configuration
+  private_endpoints = {
+    acr_private_endpoint = {
+      name                            = "pe-acr-${var.environment}-${local.location_code}"
+      subnet_resource_id              = module.spoke_vnet.subnets["management"].resource_id
+      private_dns_zone_resource_ids   = [try(local.hub_outputs.private_dns_zone_ids["privatelink.azurecr.io"], "")]
+      private_service_connection_name = "psc-acr-${var.environment}-${local.location_code}"
+    }
+  }
+
+  # Grant AKS kubelet identity pull access
+  role_assignments = {
+    aks_pull = {
+      role_definition_id_or_name = "AcrPull"
+      principal_id               = azurerm_user_assigned_identity.aks_kubelet.principal_id
+    }
+  }
+
+  enable_telemetry = true
+  tags             = local.common_tags
+}
+
+resource "random_string" "acr_suffix" {
+  length  = 6
+  special = false
+  upper   = false
+}
+
+# ===========================
+# Azure Key Vault
+# ===========================
+
+module "key_vault" {
+  source  = "Azure/avm-res-keyvault-vault/azurerm"
+  version = "~> 0.9"
+
+  name                = "kv-${var.environment}-${local.location_code}-${random_string.kv_suffix.result}"
+  location            = var.location
+  resource_group_name = azurerm_resource_group.aks_spoke.name
+  tenant_id           = data.azurerm_client_config.current.tenant_id
+
+  sku_name = "standard"
+
+  # Enable for AKS workload integration
+  enabled_for_deployment          = true
+  enabled_for_disk_encryption     = true
+  enabled_for_template_deployment = true
+  purge_protection_enabled        = true
+  soft_delete_retention_days      = 7
+
+  # Network access
+  network_acls = {
+    default_action = "Deny"
+    bypass         = "AzureServices"
+    ip_rules       = []
+  }
+
+  # Private endpoint configuration
+  private_endpoints = {
+    kv_private_endpoint = {
+      name                            = "pe-kv-${var.environment}-${local.location_code}"
+      subnet_resource_id              = module.spoke_vnet.subnets["management"].resource_id
+      private_dns_zone_resource_ids   = [try(local.hub_outputs.private_dns_zone_ids["privatelink.vaultcore.azure.net"], "")]
+      private_service_connection_name = "psc-kv-${var.environment}-${local.location_code}"
+    }
+  }
+
+  # Grant AKS control plane identity access
+  role_assignments = {
+    aks_secrets_user = {
+      role_definition_id_or_name = "Key Vault Secrets User"
+      principal_id               = azurerm_user_assigned_identity.aks_control_plane.principal_id
+    }
+  }
+
+  enable_telemetry = true
+  tags             = local.common_tags
+}
+
+resource "random_string" "kv_suffix" {
+  length  = 6
+  special = false
+  upper   = false
+}
+
+data "azurerm_client_config" "current" {}
+
+# ===========================
+# Spoke Jump Box VM
+# ===========================
+
+resource "azurerm_network_interface" "spoke_jumpbox" {
+  name                = "nic-jumpbox-spoke-${var.location_code}-${var.environment}"
+  location            = var.location
+  resource_group_name = azurerm_resource_group.aks_spoke.name
+
+  ip_configuration {
+    name                          = "internal"
+    subnet_id                     = module.spoke_vnet.subnets["management"].resource_id
+    private_ip_address_allocation = "Dynamic"
+  }
+
+  tags = var.tags
+}
+
+resource "azurerm_linux_virtual_machine" "spoke_jumpbox" {
+  name                = "vm-jumpbox-spoke-${var.location_code}-${var.environment}"
+  location            = var.location
+  resource_group_name = azurerm_resource_group.aks_spoke.name
+  size                = "Standard_D2s_v3"
+  admin_username      = var.admin_username
+
+  network_interface_ids = [
+    azurerm_network_interface.spoke_jumpbox.id,
+  ]
+
+  admin_ssh_key {
+    username   = var.admin_username
+    public_key = var.admin_ssh_public_key
+  }
+
+  os_disk {
+    caching              = "ReadWrite"
+    storage_account_type = "Premium_LRS"
+  }
+
+  source_image_reference {
+    publisher = "Canonical"
+    offer     = "0001-com-ubuntu-server-jammy"
+    sku       = "22_04-lts-gen2"
+    version   = "latest"
+  }
+
+  custom_data = base64encode(<<-EOT
+    #!/bin/bash
+    set -e
+    
+    # Update system
+    apt-get update
+    apt-get upgrade -y
+    
+    # Install Azure CLI
+    curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+    
+    # Install kubectl
+    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+    chmod +x kubectl
+    mv kubectl /usr/local/bin/
+    
+    # Install Helm
+    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+    
+    # Install k9s
+    curl -sS https://webinstall.dev/k9s | bash
+    
+    # Install jq and other tools
+    apt-get install -y jq vim curl wget git
+    
+    echo "Spoke jump box provisioning complete" >> /var/log/jumpbox-setup.log
+  EOT
+  )
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  tags = merge(var.tags, {
+    Purpose = "Jump Box - Spoke Management"
+  })
+}
+
+# Grant jump box VM AKS user role
+resource "azurerm_role_assignment" "jumpbox_aks_user" {
+  scope                = module.aks_cluster.resource_id
+  role_definition_name = "Azure Kubernetes Service Cluster User Role"
+  principal_id         = azurerm_linux_virtual_machine.spoke_jumpbox.identity[0].principal_id
+}
+
+# ===========================
+# AKS Diagnostic Settings
+# ===========================
+
+resource "azurerm_monitor_diagnostic_setting" "aks" {
+  count = try(local.hub_outputs.log_analytics_workspace_id, null) != null ? 1 : 0
+
+  name                       = "diag-aks-${var.environment}-${local.location_code}"
+  target_resource_id         = module.aks_cluster.resource_id
+  log_analytics_workspace_id = local.hub_outputs.log_analytics_workspace_id
+
+  enabled_log {
+    category = "kube-apiserver"
+  }
+
+  enabled_log {
+    category = "kube-controller-manager"
+  }
+
+  enabled_log {
+    category = "kube-scheduler"
+  }
+
+  enabled_log {
+    category = "kube-audit"
+  }
+
+  enabled_log {
+    category = "cluster-autoscaler"
+  }
+
+  enabled_metric {
+    category = "AllMetrics"
+  }
 }
