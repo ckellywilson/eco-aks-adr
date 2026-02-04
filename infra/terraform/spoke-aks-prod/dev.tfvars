@@ -1,4 +1,4 @@
-subscription_id          = "f8a5f387-2f0b-42f5-b71f-5ee02b8967cf"
+subscription_id          = "SUBSCRIPTION_ID_PLACEHOLDER"
 environment              = "dev"
 location                 = "eastus2"
 location_code            = "eus2"
