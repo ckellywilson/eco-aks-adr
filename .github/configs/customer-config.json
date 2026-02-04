@@ -1,0 +1,67 @@
+{
+  "_comment": "This is an example customer configuration representing a production deployment using Model B (platform team provides infrastructure). The spoke Terraform code supports both Model A and Model B via the .example tfvars files in infra/terraform/spoke/",
+  "hub": {
+    "firewall": true,
+    "bastion": true,
+    "applicationGateway": true,
+    "privateDnsZones": [
+      "privatelink.southcentralus.azmk8s.io",
+      "privatelink.azurecr.io",
+      "privatelink.vaultcore.azure.net",
+      "privatelink.blob.core.windows.net",
+      "privatelink.file.core.windows.net",
+      "privatelink.queue.core.windows.net",
+      "privatelink.table.core.windows.net",
+      "privatelink.monitor.azure.com",
+      "privatelink.oms.opinsights.azure.com",
+      "privatelink.ods.opinsights.azure.com",
+      "privatelink.agentsvc.azure-automation.net"
+    ],
+    "location": "southcentralus",
+    "environment": "prod",
+    "enableSecurityCenter": true,
+    "tags": {
+      "Environment": "Production",
+      "ManagedBy": "Terraform",
+      "Purpose": "AKS Landing Zone Hub"
+    }
+  },
+  "spoke": {
+    "_comment": "Model B deployment: Platform team provides RG, VNet, and Route Table. Application team creates VNet peering and AKS cluster. For Model A (dev/test), see dev.tfvars.example where create_resource_group, create_virtual_network, and create_route_table are set to true.",
+    "scenario": 2,
+    "networkPlugin": "azure",
+    "networkPluginMode": "overlay",
+    "networkDataplane": "cilium",
+    "networkPolicy": "cilium",
+    "outboundType": "userDefinedRouting",
+    "privateCluster": true,
+    "podCidr": "192.168.0.0/16",
+    "ingressMethod": "applicationGateway",
+    "createResourceGroup": false,
+    "createVirtualNetwork": false,
+    "createVnetPeering": true,
+    "createRouteTable": false,
+    "enableEgressRestriction": true,
+    "egressSecurityLevel": "strict",
+    "enableEncryptionAtHost": true,
+    "enableDefender": true,
+    "location": "southcentralus",
+    "environment": "prod",
+    "tags": {
+      "Environment": "Production",
+      "ManagedBy": "Terraform",
+      "Purpose": "AKS Spoke"
+    }
+  },
+  "repository": {
+    "provider": "ado"
+  },
+  "cicd": {
+    "platform": "ado"
+  },
+  "iac": {
+    "tool": "terraform"
+  },
+  "compliance": [],
+  "complianceOther": []
+}

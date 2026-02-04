@@ -1,0 +1,89 @@
+{
+  "_comment": "Example configuration for multi-subscription deployment (hub in connectivity subscription, spoke in application subscription)",
+  "hub": {
+    "subscriptionId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    "firewall": true,
+    "bastion": true,
+    "applicationGateway": true,
+    "privateDnsZones": [
+      "privatelink.eastus.azmk8s.io",
+      "privatelink.azurecr.io",
+      "privatelink.vaultcore.azure.net",
+      "privatelink.blob.core.windows.net",
+      "privatelink.file.core.windows.net",
+      "privatelink.queue.core.windows.net",
+      "privatelink.table.core.windows.net",
+      "privatelink.monitor.azure.com",
+      "privatelink.oms.opinsights.azure.com",
+      "privatelink.ods.opinsights.azure.com",
+      "privatelink.agentsvc.azure-automation.net"
+    ],
+    "location": "eastus",
+    "environment": "prod",
+    "enableSecurityCenter": true,
+    "enableSentinel": false,
+    "tags": {
+      "Environment": "Production",
+      "ManagedBy": "Terraform",
+      "Purpose": "AKS Landing Zone Hub",
+      "CostCenter": "Connectivity"
+    }
+  },
+  "spoke": {
+    "subscriptionId": "ffffffff-gggg-hhhh-iiii-jjjjjjjjjjjj",
+    "scenario": 2,
+    "networkPlugin": "azure",
+    "networkPluginMode": "overlay",
+    "networkDataplane": "cilium",
+    "networkPolicy": "cilium",
+    "outboundType": "userDefinedRouting",
+    "privateCluster": true,
+    "podCidr": "192.168.0.0/16",
+    "ingressMethod": "applicationGateway",
+    "createResourceGroup": false,
+    "existingResourceGroupName": "rg-aks-spoke-prod",
+    "createVirtualNetwork": false,
+    "existingVirtualNetworkName": "vnet-aks-spoke-prod",
+    "createSubnets": false,
+    "createVnetPeering": true,
+    "createRouteTable": false,
+    "enableEgressRestriction": true,
+    "egressSecurityLevel": "strict",
+    "enableEncryptionAtHost": true,
+    "enableDefender": true,
+    "location": "eastus",
+    "environment": "prod",
+    "tags": {
+      "Environment": "Production",
+      "ManagedBy": "Terraform",
+      "Purpose": "AKS Spoke",
+      "CostCenter": "Applications"
+    }
+  },
+  "crossSubscription": {
+    "enabled": true,
+    "requiresNetworkContributor": true,
+    "hubSubscriptionId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    "spokeSubscriptionId": "ffffffff-gggg-hhhh-iiii-jjjjjjjjjjjj",
+    "_notes": [
+      "Service principal deploying infrastructure needs:",
+      "1. Contributor role on hub subscription (aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee)",
+      "2. Contributor role on spoke subscription (ffffffff-gggg-hhhh-iiii-jjjjjjjjjjjj)",
+      "3. Network Contributor role on hub subscription for cross-subscription VNet peering",
+      "Terraform code will use provider aliases:",
+      "  provider 'azurerm.hub' for hub resources",
+      "  provider 'azurerm.spoke' for spoke resources"
+    ]
+  },
+  "repository": {
+    "provider": "ado"
+  },
+  "cicd": {
+    "platform": "ado"
+  },
+  "iac": {
+    "tool": "terraform"
+  },
+  "compliance": [],
+  "complianceOther": []
+}
