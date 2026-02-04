@@ -1,0 +1,6 @@
+resource_group_name  = "rg-terraform-state-dev"
+storage_account_name = "sttfstatedevd3120d7a"
+container_name       = "terraform-state-prod"
+key                  = "hub-eastus/terraform.tfstate"
+subscription_id      = "f8a5f387-2f0b-42f5-b71f-5ee02b8967cf"
+use_oidc             = true
