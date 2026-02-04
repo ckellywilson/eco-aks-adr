@@ -24,7 +24,6 @@ variable "location_code" {
 variable "resource_group_name" {
   description = "Name of the spoke resource group"
   type        = string
-  default     = "rg-aks-eus2-prod"
 }
 
 variable "spoke_vnet_address_space" {
