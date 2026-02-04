@@ -212,7 +212,7 @@ echo ""
 log_info "=== Spoke Infrastructure Validation ==="
 
 # Spoke resource group
-SPOKE_RG="rg-spoke-aks-eus2-${ENVIRONMENT}"
+SPOKE_RG="rg-aks-eus2-${ENVIRONMENT}"
 if az group show -n "$SPOKE_RG" &> /dev/null; then
     log_success "Spoke resource group exists: $SPOKE_RG"
 else
