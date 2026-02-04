@@ -138,7 +138,6 @@ variable "enable_monitoring" {
 variable "hub_resource_group_name" {
   description = "Hub resource group name for data source"
   type        = string
-  default     = "rg-hub-eus2-prod"
 }
 
 variable "hub_name" {
