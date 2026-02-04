@@ -64,7 +64,7 @@ metadata:
 spec:
   containers:
   - name: network-tools
-    image: nicolaka/netshoot:latest
+    image: nicolaka/netshoot:v0.11
     command:
       - sleep
       - "3600"

@@ -212,14 +212,15 @@ module "aks_cluster" {
   # Additional agent pools
   agent_pools = {
     user = {
-      name                = "user"
-      vm_size             = var.user_node_pool_size
-      count_of            = var.user_node_pool_count
-      vnet_subnet_id      = module.spoke_vnet.subnets["aks_nodes"].resource_id
-      enable_auto_scaling = false
-      mode                = "User"
-      os_disk_size_gb     = 30
-      os_type             = "Linux"
+      name                   = "user"
+      vm_size                = var.user_node_pool_size
+      count_of               = var.user_node_pool_count
+      vnet_subnet_id         = module.spoke_vnet.subnets["aks_nodes"].resource_id
+      enable_auto_scaling    = false
+      mode                   = "User"
+      os_disk_size_gb        = 30
+      os_type                = "Linux"
+      enable_host_encryption = true # Enable host-based encryption
       node_labels = {
         workload = "user"
       }
@@ -390,21 +391,56 @@ resource "azurerm_linux_virtual_machine" "spoke_jumpbox" {
     apt-get update
     apt-get upgrade -y
     
-    # Install Azure CLI
-    curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+    # Install Azure CLI using Microsoft's apt repository (secure method)
+    apt-get install -y ca-certificates curl apt-transport-https lsb-release gnupg
+    mkdir -p /etc/apt/keyrings
+    curl -sLS https://packages.microsoft.com/keys/microsoft.asc | 
+      gpg --dearmor | 
+      tee /etc/apt/keyrings/microsoft.gpg > /dev/null
+    chmod go+r /etc/apt/keyrings/microsoft.gpg
     
-    # Install kubectl
-    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-    chmod +x kubectl
-    mv kubectl /usr/local/bin/
+    AZ_DIST=$(lsb_release -cs)
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/azure-cli/ $AZ_DIST main" | 
+      tee /etc/apt/sources.list.d/azure-cli.list
     
-    # Install Helm
-    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+    apt-get update
+    apt-get install -y azure-cli
     
-    # Install k9s
-    curl -sS https://webinstall.dev/k9s | bash
+    # Install kubectl using official apt repository (secure method)
+    curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key | 
+      gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+    chmod 644 /etc/apt/keyrings/kubernetes-apt-keyring.gpg
     
-    # Install jq and other tools
+    echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /" | 
+      tee /etc/apt/sources.list.d/kubernetes.list
+    chmod 644 /etc/apt/sources.list.d/kubernetes.list
+    
+    apt-get update
+    apt-get install -y kubectl
+    
+    # Install Helm using official apt repository (secure method)
+    curl https://baltocdn.com/helm/signing.asc | 
+      gpg --dearmor | 
+      tee /usr/share/keyrings/helm.gpg > /dev/null
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/helm.gpg] https://baltocdn.com/helm/stable/debian/ all main" | 
+      tee /etc/apt/sources.list.d/helm-stable-debian.list
+    
+    apt-get update
+    apt-get install -y helm
+    
+    # Install k9s from GitHub releases (pinned version with checksum verification)
+    K9S_VERSION="v0.32.4"
+    K9S_CHECKSUM="2e014bb2bc8b87661b2c333c97ba0a8c581c3bc1cfa3d0c7815e5385c914d06e"
+    
+    cd /tmp
+    wget -q "https://github.com/derailed/k9s/releases/download/${K9S_VERSION}/k9s_Linux_amd64.tar.gz"
+    echo "$K9S_CHECKSUM  k9s_Linux_amd64.tar.gz" | sha256sum -c -
+    tar -xzf k9s_Linux_amd64.tar.gz
+    mv k9s /usr/local/bin/
+    chmod +x /usr/local/bin/k9s
+    rm k9s_Linux_amd64.tar.gz
+    
+    # Install additional tools
     apt-get install -y jq vim curl wget git
     
     echo "Spoke jump box provisioning complete" >> /var/log/jumpbox-setup.log
