@@ -1,4 +1,6 @@
-subscription_id          = "f8a5f387-2f0b-42f5-b71f-5ee02b8967cf"
+# NOTE: Do not commit real subscription IDs. Provide the value via TF_VAR_subscription_id
+# or a separate, git-ignored .tfvars file (e.g., prod.secrets.tfvars).
+subscription_id          = "YOUR-SUBSCRIPTION-ID"
 environment              = "prod"
 location                 = "eastus2"
 location_code            = "eus2"
