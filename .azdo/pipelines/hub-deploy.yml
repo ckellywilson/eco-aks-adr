@@ -1,0 +1,210 @@
+# Hub Infrastructure Deployment Pipeline
+# Deploys hub-eastus infrastructure to Azure using Terraform
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - infra/terraform/hub-eastus/**
+      - .azdo/pipelines/hub-deploy.yml
+      - .azdo/pipelines/templates/**
+
+pr:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - infra/terraform/hub-eastus/**
+
+parameters:
+  - name: action
+    displayName: 'Pipeline Action'
+    type: string
+    default: 'plan-apply'
+    values:
+      - 'plan-apply'
+      - 'destroy'
+
+variables:
+  - group: terraform-hub-prod
+  - name: workingDirectory
+    value: '$(System.DefaultWorkingDirectory)/infra/terraform/hub-eastus'
+  - name: serviceConnection
+    value: 'azure-hub-prod'
+  - name: terraformVersion
+    value: 'latest'
+
+stages:
+  # ============================================================
+  # VALIDATE STAGE - Runs on PR and main branch
+  # ============================================================
+  - stage: Validate
+    displayName: 'Validate Terraform Configuration'
+    condition: eq('${{ parameters.action }}', 'plan-apply')
+    jobs:
+      - job: ValidateJob
+        displayName: 'Run Terraform Validation'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - checkout: self
+
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: '$(terraformVersion)'
+
+          - template: templates/terraform-init.yml
+            parameters:
+              serviceConnection: '$(serviceConnection)'
+              workingDirectory: '$(workingDirectory)'
+              backendFile: 'backend-prod.tfbackend'
+
+          - template: templates/terraform-validate.yml
+            parameters:
+              workingDirectory: '$(workingDirectory)'
+
+  # ============================================================
+  # PLAN STAGE - Runs after validation
+  # ============================================================
+  - stage: Plan
+    displayName: 'Plan Terraform Changes'
+    dependsOn: Validate
+    condition: |
+      and(
+        succeeded(),
+        eq('${{ parameters.action }}', 'plan-apply'),
+        or(
+          eq(variables['Build.SourceBranch'], 'refs/heads/main'),
+          eq(variables['Build.Reason'], 'PullRequest')
+        )
+      )
+    jobs:
+      - job: PlanJob
+        displayName: 'Generate Terraform Plan'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - checkout: self
+
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: '$(terraformVersion)'
+
+          - template: templates/terraform-init.yml
+            parameters:
+              serviceConnection: '$(serviceConnection)'
+              workingDirectory: '$(workingDirectory)'
+              backendFile: 'backend-prod.tfbackend'
+
+          - template: templates/terraform-plan.yml
+            parameters:
+              serviceConnection: '$(serviceConnection)'
+              workingDirectory: '$(workingDirectory)'
+              varFile: 'prod.tfvars'
+              artifactName: 'hub-tfplan'
+
+  # ============================================================
+  # APPLY STAGE - Runs only on main branch with approval
+  # ============================================================
+  - stage: Apply
+    displayName: 'Apply Terraform Changes'
+    dependsOn: Plan
+    condition: |
+      and(
+        succeeded(),
+        eq('${{ parameters.action }}', 'plan-apply'),
+        eq(variables['Build.SourceBranch'], 'refs/heads/main'),
+        ne(variables['Build.Reason'], 'PullRequest')
+      )
+    jobs:
+      - deployment: ApplyDeployment
+        displayName: 'Deploy Hub Infrastructure'
+        pool:
+          vmImage: 'ubuntu-latest'
+        environment: 'prod'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: TerraformInstaller@1
+                  displayName: 'Install Terraform'
+                  inputs:
+                    terraformVersion: '$(terraformVersion)'
+
+                - template: templates/terraform-init.yml
+                  parameters:
+                    serviceConnection: '$(serviceConnection)'
+                    workingDirectory: '$(workingDirectory)'
+                    backendFile: 'backend-prod.tfbackend'
+
+                - template: templates/terraform-apply.yml
+                  parameters:
+                    serviceConnection: '$(serviceConnection)'
+                    workingDirectory: '$(workingDirectory)'
+                    artifactName: 'hub-tfplan'
+
+  # ============================================================
+  # DESTROY STAGE - Manual trigger only with runtime parameter
+  # ============================================================
+  - stage: Destroy
+    displayName: 'Destroy Hub Infrastructure'
+    dependsOn: []
+    condition: |
+      and(
+        eq('${{ parameters.action }}', 'destroy'),
+        eq(variables['Build.Reason'], 'Manual'),
+        eq(variables['Build.SourceBranch'], 'refs/heads/main')
+      )
+    jobs:
+      - deployment: DestroyDeployment
+        displayName: 'Destroy Hub Infrastructure'
+        pool:
+          vmImage: 'ubuntu-latest'
+        environment: 'prod'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: TerraformInstaller@1
+                  displayName: 'Install Terraform'
+                  inputs:
+                    terraformVersion: '$(terraformVersion)'
+
+                - template: templates/terraform-init.yml
+                  parameters:
+                    serviceConnection: '$(serviceConnection)'
+                    workingDirectory: '$(workingDirectory)'
+                    backendFile: 'backend-prod.tfbackend'
+
+                - task: AzureCLI@2
+                  displayName: 'Terraform Destroy'
+                  inputs:
+                    azureSubscription: '$(serviceConnection)'
+                    scriptType: 'bash'
+                    scriptLocation: 'inlineScript'
+                    workingDirectory: '$(workingDirectory)'
+                    addSpnToEnvironment: true
+                    inlineScript: |
+                      set -e
+                      
+                      echo "##[warning]=========================================="
+                      echo "##[warning]DESTROYING HUB INFRASTRUCTURE"
+                      echo "##[warning]This will DELETE all hub resources!"
+                      echo "##[warning]=========================================="
+                      
+                      terraform destroy \
+                        -var-file="prod.tfvars" \
+                        -var="subscription_id=$(subscription_id)" \
+                        -var="admin_ssh_public_key=$(admin_ssh_public_key)" \
+                        -auto-approve
+                      
+                      echo "##[section]Hub infrastructure destroyed"

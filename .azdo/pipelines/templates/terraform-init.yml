@@ -1,0 +1,37 @@
+# Terraform Init Template
+# Initializes Terraform with Azure backend using OIDC authentication
+
+parameters:
+  - name: serviceConnection
+    type: string
+    displayName: 'Azure Service Connection'
+  - name: workingDirectory
+    type: string
+    displayName: 'Terraform Working Directory'
+  - name: backendFile
+    type: string
+    displayName: 'Backend Configuration File'
+    default: 'backend-prod.tfbackend'
+
+steps:
+  - task: AzureCLI@2
+    displayName: 'Terraform Init'
+    inputs:
+      azureSubscription: '${{ parameters.serviceConnection }}'
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      workingDirectory: '${{ parameters.workingDirectory }}'
+      addSpnToEnvironment: true
+      inlineScript: |
+        set -e
+        
+        echo "##[section]Installing Terraform..."
+        terraform version
+        
+        echo "##[section]Initializing Terraform with backend configuration..."
+        terraform init \
+          -backend-config="${{ parameters.backendFile }}" \
+          -reconfigure \
+          -upgrade
+        
+        echo "##[section]Terraform initialized successfully"
