@@ -29,4 +29,5 @@ tags = {
   ManagedBy   = "Terraform"
   Purpose     = "AKS Spoke - Dev"
 }
-admin_ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQC... (placeholder - replace with actual key)"
+# NOTE: Do not commit real or placeholder SSH keys. Override this locally in an untracked *.tfvars file.
+admin_ssh_public_key = ""
