@@ -62,10 +62,7 @@ resource "azurerm_route" "default_route" {
   route_table_name    = azurerm_route_table.spoke.name
   address_prefix      = "0.0.0.0/0"
   next_hop_type       = "VirtualAppliance"
-  next_hop_in_ip_address = try(
-    local.hub_outputs.firewall_private_ip,
-    "10.0.1.4" # Default firewall IP if hub not deployed yet
-  )
+  next_hop_in_ip_address = local.hub_outputs.firewall_private_ip
 }
 
 # Associate route table with AKS node pools subnet
