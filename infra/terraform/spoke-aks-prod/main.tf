@@ -254,7 +254,7 @@ module "acr" {
     acr_private_endpoint = {
       name                            = "pe-acr-${var.environment}-${local.location_code}"
       subnet_resource_id              = module.spoke_vnet.subnets["management"].resource_id
-      private_dns_zone_resource_ids   = [try(local.hub_outputs.private_dns_zone_ids["privatelink.azurecr.io"], "")]
+      private_dns_zone_resource_ids   = [local.hub_outputs.private_dns_zone_ids["privatelink.azurecr.io"]]
       private_service_connection_name = "psc-acr-${var.environment}-${local.location_code}"
     }
   }
