@@ -311,7 +311,7 @@ module "key_vault" {
     kv_private_endpoint = {
       name                            = "pe-kv-${var.environment}-${local.location_code}"
       subnet_resource_id              = module.spoke_vnet.subnets["management"].resource_id
-      private_dns_zone_resource_ids   = [try(local.hub_outputs.private_dns_zone_ids["privatelink.vaultcore.azure.net"], "")]
+      private_dns_zone_resource_ids   = [local.hub_outputs.private_dns_zone_ids["privatelink.vaultcore.azure.net"]]
       private_service_connection_name = "psc-kv-${var.environment}-${local.location_code}"
     }
   }
