@@ -21,7 +21,7 @@ enable_managed_identity  = true
 enable_azure_policy      = true
 enable_workload_identity = true
 enable_monitoring        = true
-hub_resource_group_name  = "rg-hub-eus2-prod"
+hub_resource_group_name  = "rg-hub-eus2-dev"
 hub_name                 = "hub-eastus"
 
 tags = {
