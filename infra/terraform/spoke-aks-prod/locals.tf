@@ -11,8 +11,7 @@ locals {
   common_tags = merge(
     var.tags,
     {
-      CreatedBy = "Terraform"
-      CreatedAt = timestamp()
+      ManagedBy = "Terraform"
     }
   )
 

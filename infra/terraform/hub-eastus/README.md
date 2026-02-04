@@ -10,6 +10,8 @@ This directory contains Terraform code for the hub infrastructure of the Azure A
   - GatewaySubnet: 10.0.3.0/27
   - Management: 10.0.4.0/24
   - AppGatewaySubnet: 10.0.5.0/26
+  - DNSResolverInbound: 10.0.6.0/28 (inbound endpoint: 10.0.6.4)
+  - DNSResolverOutbound: 10.0.7.0/28
 
 - **Azure Firewall**: Centralized egress control for all spokes
 - **Azure Bastion**: Secure jumpbox access
@@ -77,10 +79,12 @@ These outputs are exported to `hub-eastus-outputs.json` after `terraform apply` 
 
 ## Configuration Files
 
-- **dev.tfvars**: Development environment variables
-- **prod.tfvars**: Production environment variables
+- **dev.tfvars**: Development environment variables (must be created based on your environment)
+- **prod.tfvars**: Production environment variables (must be created based on your environment)
 - **backend-dev.tfbackend**: Dev state backend configuration
 - **backend-prod.tfbackend**: Prod state backend configuration
+
+**Note**: The hub `dev.tfvars` and `prod.tfvars` files need to be created with your specific configuration values before deployment. Refer to `variables.tf` for required variables.
 
 ## State Management
 
