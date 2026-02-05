@@ -108,9 +108,9 @@ stages:
                 
                 echo "##[section]Checking if hub infrastructure is deployed..."
                 
-                # Read backend configuration
-                STORAGE_ACCOUNT="sttfstatedevd3120d7a"
-                CONTAINER="terraform-state-prod"
+                # Read backend configuration from pipeline variables
+                STORAGE_ACCOUNT="$(terraformBackendStorageAccount)"
+                CONTAINER="$(terraformBackendContainerName)"
                 HUB_STATE_KEY="$(hubStateKey)"
                 
                 # Check if hub state file exists
