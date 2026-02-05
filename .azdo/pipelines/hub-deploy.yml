@@ -35,7 +35,7 @@ variables:
   - name: serviceConnection
     value: 'azure-hub-prod'
   - name: terraformVersion
-    value: 'latest'
+    value: '1.9.x'
 
 stages:
   # ============================================================
