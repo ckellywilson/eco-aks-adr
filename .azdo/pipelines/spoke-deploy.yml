@@ -248,6 +248,7 @@ stages:
                   parameters:
                     serviceConnection: '$(serviceConnection)'
                     workingDirectory: '$(workingDirectory)'
+                    # Requires infra/terraform/spoke-aks-prod/backend-prod.tfbackend to exist
                     backendFile: 'backend-prod.tfbackend'
 
                 - task: AzureCLI@2
