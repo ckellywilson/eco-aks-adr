@@ -36,7 +36,7 @@ variables:
   - name: serviceConnection
     value: 'azure-spoke-prod'
   - name: terraformVersion
-    value: 'latest'
+    value: '1.9.x'
   - name: hubStateKey
     value: 'hub-eastus/terraform.tfstate'
 
