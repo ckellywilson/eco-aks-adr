@@ -1,0 +1,45 @@
+# Terraform Apply Template
+# Applies Terraform execution plan from artifact
+
+parameters:
+  - name: serviceConnection
+    type: string
+    displayName: 'Azure Service Connection'
+  - name: workingDirectory
+    type: string
+    displayName: 'Terraform Working Directory'
+  - name: artifactName
+    type: string
+    displayName: 'Plan Artifact Name'
+    default: 'tfplan'
+
+steps:
+  - task: DownloadPipelineArtifact@2
+    displayName: 'Download Terraform Plan Artifact'
+    inputs:
+      artifactName: '${{ parameters.artifactName }}'
+      targetPath: '${{ parameters.workingDirectory }}'
+
+  - task: AzureCLI@2
+    displayName: 'Terraform Apply'
+    inputs:
+      azureSubscription: '${{ parameters.serviceConnection }}'
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      workingDirectory: '${{ parameters.workingDirectory }}'
+      addSpnToEnvironment: true
+      inlineScript: |
+        set -e
+        
+        echo "##[section]Applying Terraform plan..."
+        
+        # Verify plan file exists
+        if [ ! -f "tfplan" ]; then
+          echo "##vso[task.logissue type=error]Plan file 'tfplan' not found"
+          exit 1
+        fi
+        
+        # Apply the saved plan
+        terraform apply -auto-approve tfplan
+        
+        echo "##[section]Terraform apply completed successfully"
