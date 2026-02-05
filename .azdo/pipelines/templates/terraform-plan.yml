@@ -1,0 +1,63 @@
+# Terraform Plan Template
+# Generates and saves Terraform execution plan as artifact
+
+parameters:
+  - name: serviceConnection
+    type: string
+    displayName: 'Azure Service Connection'
+  - name: workingDirectory
+    type: string
+    displayName: 'Terraform Working Directory'
+  - name: varFile
+    type: string
+    displayName: 'Terraform Variables File'
+    default: 'prod.tfvars'
+  - name: artifactName
+    type: string
+    displayName: 'Plan Artifact Name'
+    default: 'tfplan'
+
+steps:
+  - task: AzureCLI@2
+    displayName: 'Terraform Plan'
+    inputs:
+      azureSubscription: '${{ parameters.serviceConnection }}'
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      workingDirectory: '${{ parameters.workingDirectory }}'
+      addSpnToEnvironment: true
+      inlineScript: |
+        set -e
+        
+        echo "##[section]Generating Terraform plan..."
+        
+        # Run terraform plan and save output
+        terraform plan \
+          -var-file="${{ parameters.varFile }}" \
+          -var="subscription_id=$(subscription_id)" \
+          -var="admin_ssh_public_key=$(admin_ssh_public_key)" \
+          -out=tfplan \
+          -detailed-exitcode || EXIT_CODE=$?
+        
+        # Check exit code
+        # 0 = No changes, 1 = Error, 2 = Changes present
+        if [ "${EXIT_CODE:-0}" -eq 1 ]; then
+          echo "##vso[task.logissue type=error]Terraform plan failed"
+          exit 1
+        elif [ "${EXIT_CODE:-0}" -eq 2 ]; then
+          echo "##[section]Changes detected in plan"
+        else
+          echo "##[section]No changes detected"
+        fi
+        
+        echo "##[section]Displaying human-readable plan..."
+        terraform show tfplan
+        
+        echo "##[section]Plan generation completed"
+
+  - task: PublishPipelineArtifact@1
+    displayName: 'Publish Terraform Plan Artifact'
+    inputs:
+      targetPath: '${{ parameters.workingDirectory }}/tfplan'
+      artifactName: '${{ parameters.artifactName }}'
+      publishLocation: 'pipeline'

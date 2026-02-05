@@ -1,0 +1,55 @@
+# Terraform Validate Template
+# Performs Tier 1 & Tier 2 validation checks
+
+parameters:
+  - name: workingDirectory
+    type: string
+    displayName: 'Terraform Working Directory'
+
+steps:
+  - task: Bash@3
+    displayName: 'Terraform Format Check'
+    inputs:
+      targetType: 'inline'
+      workingDirectory: '${{ parameters.workingDirectory }}'
+      script: |
+        set -e
+        
+        echo "##[section]Running terraform fmt -check -recursive..."
+        if ! terraform fmt -check -recursive; then
+          echo "##vso[task.logissue type=error]Terraform formatting check failed. Run 'terraform fmt -recursive' to fix."
+          exit 1
+        fi
+        
+        echo "##[section]Format check passed"
+
+  - task: Bash@3
+    displayName: 'Terraform Validate'
+    inputs:
+      targetType: 'inline'
+      workingDirectory: '${{ parameters.workingDirectory }}'
+      script: |
+        set -e
+        
+        echo "##[section]Running terraform validate..."
+        terraform validate
+        
+        echo "##[section]Validation passed"
+
+  - task: Bash@3
+    displayName: 'Security Scan with tfsec (if available)'
+    inputs:
+      targetType: 'inline'
+      workingDirectory: '${{ parameters.workingDirectory }}'
+      script: |
+        set -e
+        
+        echo "##[section]Checking for tfsec..."
+        if command -v tfsec &> /dev/null; then
+          echo "##[section]Running tfsec security scan..."
+          tfsec . --minimum-severity MEDIUM --format default
+          echo "##[section]Security scan completed"
+        else
+          echo "##[warning]tfsec not found, skipping security scan. Install tfsec for enhanced security validation."
+        fi
+    continueOnError: false
