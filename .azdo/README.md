@@ -114,7 +114,7 @@ Remote state is stored in Azure Storage:
 | Property | Value |
 |----------|-------|
 | Subscription | `f8a5f387-2f0b-42f5-b71f-5ee02b8967cf` |
-| Resource Group | `rg-terraform-state-dev` |
+| Resource Group | `rg-terraform-state-prod` |
 | Storage Account | `sttfstatedevd3120d7a` |
 | Container (Prod) | `terraform-state-prod` |
 | Hub State Key | `hub-eastus/terraform.tfstate` |
