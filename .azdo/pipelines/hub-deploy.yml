@@ -18,6 +18,8 @@ pr:
   paths:
     include:
       - infra/terraform/hub-eastus/**
+      - .azdo/pipelines/hub-deploy.yml
+      - .azdo/pipelines/templates/**
 
 parameters:
   - name: action
