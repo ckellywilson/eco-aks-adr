@@ -19,6 +19,8 @@ pr:
   paths:
     include:
       - infra/terraform/spoke-aks-prod/**
+      - .azdo/pipelines/spoke-deploy.yml
+      - .azdo/pipelines/templates/**
 
 parameters:
   - name: action
