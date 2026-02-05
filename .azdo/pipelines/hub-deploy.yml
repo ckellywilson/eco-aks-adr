@@ -203,8 +203,17 @@ stages:
                       echo "##[warning]This will DELETE all hub resources!"
                       echo "##[warning]=========================================="
                       
+                      # Only use prod.tfvars if it exists to avoid file-not-found errors
+                      TF_VAR_FILE_ARG=""
+                      if [ -f "prod.tfvars" ]; then
+                        echo "##[section]Using prod.tfvars for destroy"
+                        TF_VAR_FILE_ARG='-var-file="prod.tfvars"'
+                      else
+                        echo "##[warning]prod.tfvars not found in $(pwd); proceeding without -var-file"
+                      fi
+                      
                       terraform destroy \
-                        -var-file="prod.tfvars" \
+                        $TF_VAR_FILE_ARG \
                         -var="subscription_id=$(subscription_id)" \
                         -var="admin_ssh_public_key=$(admin_ssh_public_key)" \
                         -auto-approve
