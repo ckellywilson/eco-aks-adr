@@ -41,6 +41,9 @@ stages:
               backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
               backendAzureRmContainerName: 'terraform-state-dev'
               backendAzureRmKey: 'hub-eastus/terraform.tfstate'
+              commandOptions: '-backend-config="use_oidc=true"'
+            env:
+              ARM_USE_OIDC: 'true'
 
           - task: TerraformTaskV4@4
             inputs:
@@ -65,6 +68,9 @@ stages:
               backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
               backendAzureRmContainerName: 'terraform-state-dev'
               backendAzureRmKey: 'spoke-aks-prod/terraform.tfstate'
+              commandOptions: '-backend-config="use_oidc=true"'
+            env:
+              ARM_USE_OIDC: 'true'
 
           - task: TerraformTaskV4@4
             inputs:
@@ -94,6 +100,9 @@ stages:
               backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
               backendAzureRmContainerName: 'terraform-state-dev'
               backendAzureRmKey: 'hub-eastus/terraform.tfstate'
+              commandOptions: '-backend-config="use_oidc=true"'
+            env:
+              ARM_USE_OIDC: 'true'
 
           - task: DownloadSecureFile@1
             displayName: Download prod.tfvars from Secure Files
@@ -107,6 +116,8 @@ stages:
               workingDirectory: 'infra/terraform/hub-eastus'
               commandOptions: '-var-file=$(Agent.TempDirectory)/prod.tfvars -var="subscription_id=$(AZURE_SUBSCRIPTION_ID)" -out=tfplan.prod'
               environmentServiceNameAzureRM: 'azure-hub-prod'
+            env:
+              ARM_USE_OIDC: 'true'
 
           - task: PublishBuildArtifacts@1
             inputs:
@@ -147,6 +158,9 @@ stages:
                     backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
                     backendAzureRmContainerName: 'terraform-state-dev'
                     backendAzureRmKey: 'hub-eastus/terraform.tfstate'
+                    commandOptions: '-backend-config="use_oidc=true"'
+                  env:
+                    ARM_USE_OIDC: 'true'
 
                 - task: TerraformTaskV4@4
                   inputs:
@@ -154,6 +168,8 @@ stages:
                     workingDirectory: 'infra/terraform/hub-eastus'
                     commandOptions: '$(System.DefaultWorkingDirectory)/hub-tfplan/tfplan.prod'
                     environmentServiceNameAzureRM: 'azure-hub-prod'
+                  env:
+                    ARM_USE_OIDC: 'true'
 
   - stage: PlanSpoke
     displayName: Plan Spoke Infrastructure
@@ -178,6 +194,9 @@ stages:
               backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
               backendAzureRmContainerName: 'terraform-state-dev'
               backendAzureRmKey: 'spoke-aks-prod/terraform.tfstate'
+              commandOptions: '-backend-config="use_oidc=true"'
+            env:
+              ARM_USE_OIDC: 'true'
 
           - task: TerraformTaskV4@4
             inputs:
@@ -185,6 +204,8 @@ stages:
               workingDirectory: 'infra/terraform/spoke-aks-prod'
               commandOptions: '-var-file=prod.tfvars -var="subscription_id=$(AZURE_SUBSCRIPTION_ID)" -out=tfplan.prod'
               environmentServiceNameAzureRM: 'azure-hub-prod'
+            env:
+              ARM_USE_OIDC: 'true'
 
           - task: PublishBuildArtifacts@1
             inputs:
@@ -225,6 +246,9 @@ stages:
                     backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
                     backendAzureRmContainerName: 'terraform-state-dev'
                     backendAzureRmKey: 'spoke-aks-prod/terraform.tfstate'
+                    commandOptions: '-backend-config="use_oidc=true"'
+                  env:
+                    ARM_USE_OIDC: 'true'
 
                 - task: TerraformTaskV4@4
                   inputs:
@@ -232,3 +256,5 @@ stages:
                     workingDirectory: 'infra/terraform/spoke-aks-prod'
                     commandOptions: '$(System.DefaultWorkingDirectory)/spoke-tfplan/tfplan.prod'
                     environmentServiceNameAzureRM: 'azure-hub-prod'
+                  env:
+                    ARM_USE_OIDC: 'true'
