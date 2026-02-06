@@ -116,5 +116,5 @@ output "nginx_internal_lb_ip" {
 
 output "nginx_configuration_note" {
   description = "Instructions for configuring NGINX ingress controller with internal load balancer"
-  value       = var.enable_web_app_routing ? "After deployment, create a NginxIngressController resource with loadBalancerAnnotations set to 'service.beta.kubernetes.io/azure-load-balancer-internal: true'. See README for details." : null
+  value       = var.enable_web_app_routing ? "After deployment, create a NginxIngressController resource with loadBalancerAnnotations: 'service.beta.kubernetes.io/azure-load-balancer-internal: true' and 'service.beta.kubernetes.io/azure-load-balancer-internal-ip: ${var.nginx_internal_lb_ip}'. See manifests/nginx-internal-controller.yaml for a complete example." : null
 }
