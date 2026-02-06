@@ -8,7 +8,7 @@ resource "azurerm_resource_group" "hub" {
 # Hub VNet with subnets
 module "hub_vnet" {
   source  = "Azure/avm-res-network-virtualnetwork/azurerm"
-  version = "~> 0.4"
+  version = "0.4.2"
 
   name      = "vnet-hub-${var.environment}-${local.location_code}"
   parent_id = azurerm_resource_group.hub.id
@@ -39,7 +39,7 @@ resource "azurerm_public_ip" "firewall" {
 module "firewall" {
   count   = var.deploy_firewall ? 1 : 0
   source  = "Azure/avm-res-network-azurefirewall/azurerm"
-  version = "~> 0.3"
+  version = "0.3.1"
 
   name                = "afw-hub-${var.environment}-${local.location_code}"
   resource_group_name = azurerm_resource_group.hub.name
@@ -77,7 +77,7 @@ resource "azurerm_firewall_policy" "hub" {
 module "bastion" {
   count   = var.deploy_bastion ? 1 : 0
   source  = "Azure/avm-res-network-bastionhost/azurerm"
-  version = "~> 0.3"
+  version = "0.3.1"
 
   name      = "bas-hub-${var.environment}-${local.location_code}"
   location  = var.location
@@ -96,7 +96,7 @@ module "bastion" {
 # Log Analytics Workspace
 module "log_analytics" {
   source  = "Azure/avm-res-operationalinsights-workspace/azurerm"
-  version = "~> 0.4"
+  version = "0.4.2"
 
   name                = "law-hub-${var.environment}-${local.location_code}"
   resource_group_name = azurerm_resource_group.hub.name
@@ -114,7 +114,7 @@ module "private_dns_zones" {
   for_each = toset(var.private_dns_zones)
 
   source  = "Azure/avm-res-network-privatednszone/azurerm"
-  version = "~> 0.2"
+  version = "0.2.0"
 
   domain_name = each.value
   parent_id   = azurerm_resource_group.hub.id
