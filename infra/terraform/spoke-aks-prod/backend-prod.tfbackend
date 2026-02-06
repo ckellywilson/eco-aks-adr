@@ -1,0 +1,4 @@
+resource_group_name  = "rg-terraform-state-dev"
+storage_account_name = "sttfstatedevd3120d7a"
+container_name       = "terraform-state-dev"
+key                  = "spoke-aks-prod/terraform.tfstate"

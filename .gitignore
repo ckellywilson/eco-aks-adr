@@ -47,6 +47,8 @@ override.tf.json
 *.tfbackend
 # EXCEPTION: Keep example backend configs for reference
 !**/*.tfbackend.example
+# EXCEPTION: Keep production backend configs (no secrets, just storage account info)
+!infra/**/backend-prod.tfbackend
 
 # ============================================================================
 # Terraform Variable Files (Environment-specific)
