@@ -11,9 +11,15 @@ locals {
   common_tags = merge(
     var.tags,
     {
-      CreatedBy = "Terraform"
-      CreatedAt = timestamp()
+      CreatedBy   = "Terraform"
+      Environment = var.environment
     }
+  )
+
+  # Allowed source addresses for firewall rules (hub + spokes)
+  allowed_source_addresses = concat(
+    var.hub_vnet_address_space,
+    var.spoke_vnet_address_spaces
   )
 
   subnet_config = {
@@ -28,6 +34,7 @@ locals {
     GatewaySubnet = {
       name             = "GatewaySubnet"
       address_prefixes = ["10.0.3.0/27"]
+      # Reserved for future VPN/ExpressRoute gateway deployment; do not reuse this address space.
     }
     management = {
       name             = "management"

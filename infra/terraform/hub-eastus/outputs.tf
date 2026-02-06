@@ -82,7 +82,7 @@ output "dns_resolver_outbound_ip" {
 
 output "hub_jumpbox_private_ip" {
   description = "Hub jump box VM private IP address"
-  value       = azurerm_network_interface.hub_jumpbox.private_ip_address
+  value       = try(azurerm_network_interface.hub_jumpbox.private_ip_address, null)
 }
 
 output "hub_jumpbox_id" {
