@@ -708,5 +708,5 @@ kubectl get nginxingresscontroller nginx-internal -o yaml
 kubectl get ingress -A
 ```
 
-For complete documentation including DNS configuration, TLS setup, and troubleshooting, see the full README in this directory.
+This section is a quick-start operational summary. For complete documentation including DNS configuration, TLS setup, and troubleshooting, see the **NGINX Ingress Controller (Internal Load Balancer)** section earlier in this README.
 
