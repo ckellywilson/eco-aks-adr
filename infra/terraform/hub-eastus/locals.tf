@@ -31,6 +31,7 @@ locals {
       name             = "AzureBastionSubnet"
       address_prefixes = ["10.0.2.0/27"]
     }
+    # Reserved for future VPN/ExpressRoute gateway deployment; do not reuse this address space.
     GatewaySubnet = {
       name             = "GatewaySubnet"
       address_prefixes = ["10.0.3.0/27"]
