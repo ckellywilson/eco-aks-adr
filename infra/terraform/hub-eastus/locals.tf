@@ -44,22 +44,28 @@ locals {
     dns_resolver_inbound = {
       name             = "dns-resolver-inbound"
       address_prefixes = ["10.0.6.0/28"]
-      delegation = {
-        name = "Microsoft.Network.dnsResolvers"
-        service_delegation = {
+      delegation = [
+        {
           name = "Microsoft.Network/dnsResolvers"
+          service_delegation = {
+            name    = "Microsoft.Network/dnsResolvers"
+            actions = []
+          }
         }
-      }
+      ]
     }
     dns_resolver_outbound = {
       name             = "dns-resolver-outbound"
       address_prefixes = ["10.0.7.0/28"]
-      delegation = {
-        name = "Microsoft.Network.dnsResolvers"
-        service_delegation = {
+      delegation = [
+        {
           name = "Microsoft.Network/dnsResolvers"
+          service_delegation = {
+            name    = "Microsoft.Network/dnsResolvers"
+            actions = []
+          }
         }
-      }
+      ]
     }
   }
 }

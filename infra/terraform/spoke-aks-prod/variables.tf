@@ -152,7 +152,7 @@ variable "nginx_internal_lb_ip" {
   default     = "10.1.0.50"
 
   validation {
-    condition = can(regex("^10\\.1\\.[0-3]\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$", var.nginx_internal_lb_ip))
+    condition     = can(regex("^10\\.1\\.[0-3]\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$", var.nginx_internal_lb_ip))
     error_message = "The nginx_internal_lb_ip must be a valid IPv4 address within the AKS nodes subnet range 10.1.0.0/22."
   }
 }

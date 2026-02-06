@@ -1,25 +1,21 @@
-# Read hub outputs
-# This allows the spoke to consume hub resources
-# Note: Hub outputs file is generated after hub deployment
+# Read hub outputs from Terraform remote state
+# This ensures the spoke always references the current hub infrastructure
+# by reading directly from the hub's state file in the backend
+# 
+# Authentication:
+# - Local: Uses Azure AD tokens from `az login`; set ARM_USE_AZUREAD=true
+# - ADO: Set ARM_USE_OIDC=true env var for Workload Identity OIDC
+data "terraform_remote_state" "hub" {
+  backend = "azurerm"
+
+  config = {
+    resource_group_name  = "rg-terraform-state-dev"
+    storage_account_name = "sttfstatedevd3120d7a"
+    container_name       = "terraform-state-prod"
+    key                  = "hub-eastus/terraform.tfstate"
+  }
+}
+
 locals {
-  hub_outputs = try(jsondecode(file("../hub-eastus/hub-eastus-outputs.json")), {
-    hub_vnet_id                = null
-    firewall_private_ip        = null
-    log_analytics_workspace_id = null
-    dns_resolver_inbound_ip    = null
-    private_dns_zone_ids       = {}
-  })
-}
-
-# Reference hub resources via data sources if file doesn't exist yet
-data "azurerm_virtual_network" "hub" {
-  count               = local.hub_outputs.hub_vnet_id == null ? 1 : 0
-  name                = "vnet-hub-${var.environment}-${local.location_code}"
-  resource_group_name = var.hub_resource_group_name
-}
-
-data "azurerm_log_analytics_workspace" "hub" {
-  count               = local.hub_outputs.log_analytics_workspace_id == null ? 1 : 0
-  name                = "law-hub-${var.environment}-${local.location_code}"
-  resource_group_name = var.hub_resource_group_name
+  hub_outputs = data.terraform_remote_state.hub.outputs
 }

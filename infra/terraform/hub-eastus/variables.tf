@@ -53,6 +53,12 @@ variable "deploy_dns_resolver" {
   default     = true
 }
 
+variable "deploy_jumpbox" {
+  description = "Deploy jump box VM for accessing AKS cluster"
+  type        = bool
+  default     = false
+}
+
 variable "firewall_sku_tier" {
   description = "Azure Firewall SKU tier"
   type        = string

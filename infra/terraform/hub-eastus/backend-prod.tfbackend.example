@@ -1,0 +1,36 @@
+# Hub Production Backend Configuration
+# ============================================================================
+# INSTRUCTIONS:
+# 1. Copy this file to backend-prod.tfbackend (which is gitignored)
+# 2. Update the values to match your Azure environment
+# 3. DO NOT commit backend-prod.tfbackend to version control
+#
+# Alternative: Use terraform init -backend-config flags instead of this file
+#   terraform init \
+#     -backend-config="resource_group_name=rg-terraform-state-prod" \
+#     -backend-config="storage_account_name=<your-storage-account>" \
+#     -backend-config="container_name=terraform-state-prod" \
+#     -backend-config="key=hub-eastus/terraform.tfstate" \
+#     -backend-config="use_azuread_auth=true"
+# ============================================================================
+
+# Azure resource group containing the Terraform state storage account
+resource_group_name  = "rg-terraform-state-prod"
+
+# Azure storage account name for remote state
+# Must be an existing storage account in the resource group above
+storage_account_name = "sttfstatexxxxx"
+
+# Container name within the storage account
+container_name       = "terraform-state-prod"
+
+# State file path/key within the container
+# Use different keys for different environments (prod, dev, staging, etc)
+key                  = "hub-eastus/terraform.tfstate"
+
+# Authentication method
+# Options:
+#   - use_azuread_auth=true  - Use Azure AD (requires 'az login')
+#   - use_oidc=true          - Use OpenID Connect (for CI/CD pipelines)
+# Default is use_azuread_auth for local development
+use_azuread_auth     = true
