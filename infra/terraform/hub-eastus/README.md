@@ -7,23 +7,25 @@ This directory contains Terraform code for the hub infrastructure of the Azure A
 - **VNet**: Hub virtual network with segregated subnets (10.0.0.0/16)
   - AzureFirewallSubnet: 10.0.1.0/26
   - AzureBastionSubnet: 10.0.2.0/27
-  - GatewaySubnet: 10.0.3.0/27
-  - Management: 10.0.4.0/24
-  - AppGatewaySubnet: 10.0.5.0/26
-  - DNSResolverInbound: 10.0.6.0/28 (inbound endpoint: 10.0.6.4)
-  - DNSResolverOutbound: 10.0.7.0/28
+  - GatewaySubnet: 10.0.3.0/27 (reserved for future VPN/ExpressRoute gateway)
+  - Management: 10.0.4.0/24 (jump box VM)
+  - DNS Resolver Inbound: 10.0.6.0/28
+  - DNS Resolver Outbound: 10.0.7.0/28
 
-- **Azure Firewall**: Centralized egress control for all spokes
-- **Azure Bastion**: Secure jumpbox access
+- **Azure Firewall**: Centralized egress control for all spokes with AKS-specific rules
+- **Azure Bastion**: Secure jumpbox access to management subnet
+- **Private DNS Resolver**: Hybrid DNS resolution with forwarding rules
 - **Log Analytics Workspace**: Centralized monitoring (30-day retention)
 - **Private DNS Zones**: For private endpoints (ACR, Key Vault, AKS API, Storage, etc.)
+- **Jump Box VM**: Management VM with Azure CLI, kubectl, Helm, and k9s pre-installed
 
 ## Prerequisites
 
-- Terraform >= 1.9
+- Terraform 1.10.5 (pinned for production)
 - Azure CLI >= 2.50
 - Appropriate Azure subscription permissions (Contributor role)
 - Storage account for remote state backend already configured
+- SSH public key for jump box VM authentication
 
 ## Deployment
 
@@ -170,16 +172,63 @@ Default configuration deploys:
 
 To reduce costs:
 - Set `deploy_firewall = false` to remove firewall (~$900/month savings)
-- Set `deploy_application_gateway = false` if not using App Gateway
-- Use Premium Firewall tier only if you need HTTP/S inspection
+- Set `deploy_bastion = false` if you have alternative secure access methods
+- Use Premium Firewall tier only if you need TLS inspection or advanced threat protection
+
+## VNet Peering Configuration
+
+The hub infrastructure includes optional VNet peering configuration for connecting spoke networks. By default, `spoke_vnets` is an empty map, allowing the hub to be deployed independently without any spokes.
+
+### Initial Deployment (No Spokes)
+
+On first deployment, leave `spoke_vnets` empty in your tfvars file:
+
+```hcl
+# dev.tfvars or prod.tfvars
+spoke_vnets = {}
+```
+
+This will deploy the hub without any peering connections, which is the recommended approach for initial setup.
+
+### Adding Spoke Peering (After Spoke Deployment)
+
+After deploying spoke infrastructure, update your tfvars file to configure peering:
+
+```hcl
+# dev.tfvars or prod.tfvars
+spoke_vnets = {
+  "spoke-aks-prod" = {
+    name                = "vnet-spoke-aks-eus2-prod"
+    resource_group_name = "rg-spoke-aks-eus2-prod"
+    address_space       = ["10.1.0.0/16"]
+  }
+  "spoke-data" = {
+    name                = "vnet-spoke-data-eus2-prod"
+    resource_group_name = "rg-spoke-data-eus2-prod"
+    address_space       = ["10.2.0.0/16"]
+  }
+}
+
+spoke_vnet_address_spaces = ["10.1.0.0/16", "10.2.0.0/16"]
+```
+
+Then run `terraform plan` and `terraform apply` to create the peering connections.
+
+### Important Notes
+
+- VNet peering is bidirectional and will be created in both hub and spoke resource groups
+- Spoke VNets must exist before configuring peering (data source will fail otherwise)
+- The `spoke_vnet_address_spaces` variable is used for firewall source address restrictions
+- Peering allows forwarded traffic to enable hub firewall routing
 
 ## Next Steps
 
-1. Deploy hub infrastructure
+1. Deploy hub infrastructure (without spokes)
 2. Generate outputs: `hub-eastus-outputs.json`
 3. Review outputs
 4. Deploy spoke infrastructure referencing hub outputs
-5. Configure firewall rules as needed for spoke traffic
+5. Update hub configuration with spoke_vnets and redeploy to establish peering
+6. Configure firewall rules as needed for spoke traffic
 
 ## Documentation
 
