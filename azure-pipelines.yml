@@ -156,15 +156,15 @@ stages:
                   inputs:
                     command: 'init'
                     workingDirectory: 'infra/terraform/hub-eastus'
-                    backendServiceArm: 'azure-hub-prod'
                     backendAzureRmResourceGroupName: 'rg-terraform-state-dev'
                     backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
                     backendAzureRmContainerName: 'terraform-state-dev'
                     backendAzureRmKey: 'hub-eastus/terraform.tfstate'
-                    backendAzureRmUseOIDC: 'true'
                     commandOptions: '-backend-config="use_oidc=true"'
                   env:
                     ARM_USE_OIDC: 'true'
+                    ARM_CLIENT_ID: $(AZURE_CLIENT_ID)
+                    ARM_TENANT_ID: $(AZURE_TENANT_ID)
 
                 - task: TerraformTaskV4@4
                   inputs:
@@ -246,15 +246,15 @@ stages:
                   inputs:
                     command: 'init'
                     workingDirectory: 'infra/terraform/spoke-aks-prod'
-                    backendServiceArm: 'azure-hub-prod'
                     backendAzureRmResourceGroupName: 'rg-terraform-state-dev'
                     backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
                     backendAzureRmContainerName: 'terraform-state-dev'
                     backendAzureRmKey: 'spoke-aks-prod/terraform.tfstate'
-                    backendAzureRmUseOIDC: 'true'
                     commandOptions: '-backend-config="use_oidc=true"'
                   env:
                     ARM_USE_OIDC: 'true'
+                    ARM_CLIENT_ID: $(AZURE_CLIENT_ID)
+                    ARM_TENANT_ID: $(AZURE_TENANT_ID)
 
                 - task: TerraformTaskV4@4
                   inputs:
