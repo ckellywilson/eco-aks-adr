@@ -31,9 +31,6 @@ deploy_bastion  = true
 # DNS Resolver
 deploy_dns_resolver = true
 
-# Jumpbox VM
-deploy_jumpbox = true
-
 # Logging
 log_retention_days  = 7
 log_analytics_sku   = "PerGB2018"
