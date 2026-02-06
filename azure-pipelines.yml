@@ -36,7 +36,7 @@ stages:
             inputs:
               command: 'init'
               workingDirectory: 'infra/terraform/hub-eastus'
-              backendServiceArm: 'azure-terraform-connection'
+              backendServiceArm: 'azure-hub-prod'
               backendAzureRmResourceGroupName: 'rg-terraform-state-dev'
               backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
               backendAzureRmContainerName: 'terraform-state-dev'
@@ -89,18 +89,24 @@ stages:
             inputs:
               command: 'init'
               workingDirectory: 'infra/terraform/hub-eastus'
-              backendServiceArm: 'azure-terraform-connection'
+              backendServiceArm: 'azure-hub-prod'
               backendAzureRmResourceGroupName: 'rg-terraform-state-dev'
               backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
               backendAzureRmContainerName: 'terraform-state-dev'
               backendAzureRmKey: 'hub-eastus/terraform.tfstate'
 
+          - task: DownloadSecureFile@1
+            displayName: Download prod.tfvars from Secure Files
+            inputs:
+              secureFile: 'prod.tfvars'
+              retryCount: '5'
+
           - task: TerraformTaskV4@4
             inputs:
               command: 'plan'
               workingDirectory: 'infra/terraform/hub-eastus'
-              commandOptions: '-var-file=prod.tfvars -var="subscription_id=$(AZURE_SUBSCRIPTION_ID)" -out=tfplan.prod'
-              environmentServiceNameAzureRM: 'azure-terraform-connection'
+              commandOptions: '-var-file=$(Agent.TempDirectory)/prod.tfvars -var="subscription_id=$(AZURE_SUBSCRIPTION_ID)" -out=tfplan.prod'
+              environmentServiceNameAzureRM: 'azure-hub-prod'
 
           - task: PublishBuildArtifacts@1
             inputs:
@@ -114,7 +120,7 @@ stages:
     jobs:
       - deployment: ApplyHubJob
         displayName: Terraform Apply - Hub
-        environment: 'production'
+        environment: 'terraform-hub-prod'
         strategy:
           runOnce:
             deploy:
@@ -136,7 +142,7 @@ stages:
                   inputs:
                     command: 'init'
                     workingDirectory: 'infra/terraform/hub-eastus'
-                    backendServiceArm: 'azure-terraform-connection'
+                    backendServiceArm: 'azure-hub-prod'
                     backendAzureRmResourceGroupName: 'rg-terraform-state-dev'
                     backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
                     backendAzureRmContainerName: 'terraform-state-dev'
@@ -147,7 +153,7 @@ stages:
                     command: 'apply'
                     workingDirectory: 'infra/terraform/hub-eastus'
                     commandOptions: '$(System.DefaultWorkingDirectory)/hub-tfplan/tfplan.prod'
-                    environmentServiceNameAzureRM: 'azure-terraform-connection'
+                    environmentServiceNameAzureRM: 'azure-hub-prod'
 
   - stage: PlanSpoke
     displayName: Plan Spoke Infrastructure
