@@ -106,7 +106,22 @@ variable "onprem_dns_servers" {
 }
 
 variable "spoke_vnets" {
-  description = "Spoke VNets for peering configuration"
+  description = <<-EOT
+    Spoke VNets for peering configuration.
+    
+    Leave empty ({}) for initial hub deployment. After deploying spoke 
+    infrastructure, populate this with spoke VNet details and reapply to 
+    establish peering connections.
+    
+    Example:
+    spoke_vnets = {
+      "spoke-aks-prod" = {
+        name                = "vnet-spoke-aks-eus2-prod"
+        resource_group_name = "rg-spoke-aks-eus2-prod"
+        address_space       = ["10.1.0.0/16"]
+      }
+    }
+  EOT
   type = map(object({
     name                = string
     resource_group_name = string
@@ -116,7 +131,12 @@ variable "spoke_vnets" {
 }
 
 variable "spoke_vnet_address_spaces" {
-  description = "List of spoke VNet address spaces for firewall rules (e.g., ['10.1.0.0/16', '10.2.0.0/16'])"
+  description = <<-EOT
+    List of spoke VNet address spaces for firewall rules (e.g., ['10.1.0.0/16', '10.2.0.0/16']).
+    
+    This is used to restrict firewall source addresses to known networks. Should match 
+    the address_space values from spoke_vnets. Leave empty ([]) for initial deployment.
+  EOT
   type        = list(string)
   default     = []
 }
