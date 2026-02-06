@@ -46,6 +46,6 @@ admin_ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM... your-public-ke
 
 # Resource tags
 tags = {
-  project   = "hub"
+  Purpose   = "AKS Landing Zone Hub"
   ManagedBy = "Terraform"
 }
