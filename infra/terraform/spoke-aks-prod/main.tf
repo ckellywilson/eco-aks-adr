@@ -56,13 +56,15 @@ resource "azurerm_route_table" "spoke" {
 }
 
 # Default route to hub firewall (0.0.0.0/0 -> Firewall Private IP)
+# Only create if firewall_private_ip is available from hub outputs
 resource "azurerm_route" "default_route" {
+  count                  = try(local.hub_outputs.firewall_private_ip, null) != null ? 1 : 0
   name                   = "route-default-to-firewall"
   resource_group_name    = azurerm_resource_group.aks_spoke.name
   route_table_name       = azurerm_route_table.spoke.name
   address_prefix         = "0.0.0.0/0"
   next_hop_type          = "VirtualAppliance"
-  next_hop_in_ip_address = local.hub_outputs.firewall_private_ip
+  next_hop_in_ip_address = try(local.hub_outputs.firewall_private_ip, "")
 }
 
 # Associate route table with AKS node pools subnet
@@ -174,7 +176,7 @@ resource "azurerm_subnet_network_security_group_association" "aks_nodes" {
 
 # AKS Cluster with Azure Verified Module
 module "aks_cluster" {
-  source  = "Azure/avm-res-containerservice-managedcluster/azurerm"
+  source = "Azure/avm-res-containerservice-managedcluster/azurerm"
   # Tested with v0.4.2. Using ~> 0.4 to allow patch updates (0.4.x) for bug fixes
   # while maintaining compatibility with ingress_profile support introduced in 0.4.x
   version = "~> 0.4"
@@ -263,10 +265,7 @@ module "aks_cluster" {
   addon_profile_oms_agent = var.enable_monitoring ? {
     enabled = true
     config = {
-      log_analytics_workspace_resource_id = try(
-        local.hub_outputs.log_analytics_workspace_id,
-        data.azurerm_log_analytics_workspace.hub[0].id
-      )
+      log_analytics_workspace_resource_id = local.hub_outputs.log_analytics_workspace_id
     }
   } : null
 
@@ -545,13 +544,9 @@ resource "azurerm_role_assignment" "jumpbox_aks_user" {
 resource "azurerm_monitor_diagnostic_setting" "aks" {
   count = local.hub_outputs.log_analytics_workspace_id != null ? 1 : 0
 
-  name               = "diag-aks-${var.environment}-${local.location_code}"
-  target_resource_id = module.aks_cluster.resource_id
-  # Use coalesce to provide fallback (won't be used due to count, but satisfies validation)
-  log_analytics_workspace_id = coalesce(
-    local.hub_outputs.log_analytics_workspace_id,
-    try(data.azurerm_log_analytics_workspace.hub[0].id, null)
-  )
+  name                       = "diag-aks-${var.environment}-${local.location_code}"
+  target_resource_id         = module.aks_cluster.resource_id
+  log_analytics_workspace_id = local.hub_outputs.log_analytics_workspace_id
 
   enabled_log {
     category = "kube-apiserver"

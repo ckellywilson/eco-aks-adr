@@ -15,15 +15,15 @@ output "hub_vnet_name" {
 
 output "hub_vnet_address_space" {
   description = "Hub VNet address space"
-  value       = module.hub_vnet.address_spaces
+  value       = var.hub_vnet_address_space
 }
 
 output "hub_subnets" {
   description = "Hub VNet subnets"
   value = {
     for name, subnet in module.hub_vnet.subnets : name => {
-      id               = subnet.resource_id
-      address_prefixes = subnet.address_prefixes
+      id   = subnet.resource_id
+      name = subnet.name
     }
   }
 }
@@ -56,12 +56,13 @@ output "log_analytics_workspace_id" {
 output "log_analytics_workspace_name" {
   description = "Log Analytics workspace name"
   value       = module.log_analytics.resource.name
+  sensitive   = true
 }
 
 output "private_dns_zone_ids" {
   description = "Map of private DNS zone names to IDs"
   value = {
-    for zone_name, zone_module in module.private_dns_zones : zone_name => zone_module.zone_id
+    for zone_name, zone_module in module.private_dns_zones : zone_name => zone_module.resource_id
   }
 }
 
@@ -82,10 +83,10 @@ output "dns_resolver_outbound_ip" {
 
 output "hub_jumpbox_private_ip" {
   description = "Hub jump box VM private IP address"
-  value       = try(azurerm_network_interface.hub_jumpbox.private_ip_address, null)
+  value       = try(azurerm_network_interface.hub_jumpbox[0].private_ip_address, null)
 }
 
 output "hub_jumpbox_id" {
   description = "Hub jump box VM resource ID"
-  value       = azurerm_linux_virtual_machine.hub_jumpbox.id
+  value       = try(azurerm_linux_virtual_machine.hub_jumpbox[0].id, null)
 }

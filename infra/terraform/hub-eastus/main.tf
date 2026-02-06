@@ -8,11 +8,11 @@ resource "azurerm_resource_group" "hub" {
 # Hub VNet with subnets
 module "hub_vnet" {
   source  = "Azure/avm-res-network-virtualnetwork/azurerm"
-  version = "0.4.2"
+  version = "0.9.0"
 
-  name      = "vnet-hub-${var.environment}-${local.location_code}"
-  parent_id = azurerm_resource_group.hub.id
-  location  = var.location
+  resource_group_name = azurerm_resource_group.hub.name
+  name                = "vnet-hub-${var.environment}-${local.location_code}"
+  location            = var.location
 
   address_space = var.hub_vnet_address_space
 
@@ -39,7 +39,7 @@ resource "azurerm_public_ip" "firewall" {
 module "firewall" {
   count   = var.deploy_firewall ? 1 : 0
   source  = "Azure/avm-res-network-azurefirewall/azurerm"
-  version = "0.3.1"
+  version = "0.4.0"
 
   name                = "afw-hub-${var.environment}-${local.location_code}"
   resource_group_name = azurerm_resource_group.hub.name
@@ -73,20 +73,33 @@ resource "azurerm_firewall_policy" "hub" {
   tags = local.common_tags
 }
 
+# Public IP for Bastion
+resource "azurerm_public_ip" "bastion" {
+  count               = var.deploy_bastion ? 1 : 0
+  name                = "pip-bas-hub-${var.environment}-${local.location_code}"
+  resource_group_name = azurerm_resource_group.hub.name
+  location            = var.location
+  allocation_method   = "Static"
+  sku                 = "Standard"
+
+  tags = local.common_tags
+}
+
 # Azure Bastion
 module "bastion" {
   count   = var.deploy_bastion ? 1 : 0
   source  = "Azure/avm-res-network-bastionhost/azurerm"
-  version = "0.3.1"
+  version = "0.4.0"
 
-  name      = "bas-hub-${var.environment}-${local.location_code}"
-  location  = var.location
-  parent_id = azurerm_resource_group.hub.id
-  sku       = var.bastion_sku
+  name                = "bas-hub-${var.environment}-${local.location_code}"
+  resource_group_name = azurerm_resource_group.hub.name
+  location            = var.location
+  sku                 = var.bastion_sku
 
   ip_configuration = {
-    name      = "ipconfig1"
-    subnet_id = module.hub_vnet.subnets["AzureBastionSubnet"].resource_id
+    name                 = "ipconfig1"
+    subnet_id            = module.hub_vnet.subnets["AzureBastionSubnet"].resource_id
+    public_ip_address_id = azurerm_public_ip.bastion[0].id
   }
 
   enable_telemetry = true
@@ -96,7 +109,7 @@ module "bastion" {
 # Log Analytics Workspace
 module "log_analytics" {
   source  = "Azure/avm-res-operationalinsights-workspace/azurerm"
-  version = "0.4.2"
+  version = "0.5.0"
 
   name                = "law-hub-${var.environment}-${local.location_code}"
   resource_group_name = azurerm_resource_group.hub.name
@@ -114,10 +127,10 @@ module "private_dns_zones" {
   for_each = toset(var.private_dns_zones)
 
   source  = "Azure/avm-res-network-privatednszone/azurerm"
-  version = "0.2.0"
+  version = "0.3.0"
 
-  domain_name = each.value
-  parent_id   = azurerm_resource_group.hub.id
+  resource_group_name = azurerm_resource_group.hub.name
+  domain_name         = each.value
 
   virtual_network_links = {
     hub_vnet = {
@@ -379,6 +392,7 @@ resource "azurerm_virtual_network_peering" "spoke_to_hub" {
 # ===========================
 
 resource "azurerm_network_interface" "hub_jumpbox" {
+  count               = var.deploy_jumpbox ? 1 : 0
   name                = "nic-jumpbox-hub-${var.location_code}-${var.environment}"
   location            = var.location
   resource_group_name = azurerm_resource_group.hub.name
@@ -393,6 +407,7 @@ resource "azurerm_network_interface" "hub_jumpbox" {
 }
 
 resource "azurerm_linux_virtual_machine" "hub_jumpbox" {
+  count               = var.deploy_jumpbox ? 1 : 0
   name                = "vm-jumpbox-hub-${var.location_code}-${var.environment}"
   location            = var.location
   resource_group_name = azurerm_resource_group.hub.name
@@ -400,7 +415,7 @@ resource "azurerm_linux_virtual_machine" "hub_jumpbox" {
   admin_username      = var.admin_username
 
   network_interface_ids = [
-    azurerm_network_interface.hub_jumpbox.id,
+    azurerm_network_interface.hub_jumpbox[0].id,
   ]
 
   admin_ssh_key {
