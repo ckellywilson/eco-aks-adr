@@ -45,11 +45,7 @@ variable "deploy_bastion" {
   default     = true
 }
 
-variable "deploy_application_gateway" {
-  description = "Deploy Application Gateway for ingress"
-  type        = bool
-  default     = true
-}
+
 
 variable "deploy_dns_resolver" {
   description = "Deploy Private DNS Resolver"
@@ -119,6 +115,12 @@ variable "spoke_vnets" {
   default = {}
 }
 
+variable "spoke_vnet_address_spaces" {
+  description = "List of spoke VNet address spaces for firewall rules (e.g., ['10.1.0.0/16', '10.2.0.0/16'])"
+  type        = list(string)
+  default     = []
+}
+
 variable "admin_username" {
   description = "Admin username for jump box VMs"
   type        = string
@@ -135,8 +137,7 @@ variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)
   default = {
-    Environment = "prod"
-    ManagedBy   = "Terraform"
-    Purpose     = "AKS Landing Zone Hub"
+    ManagedBy = "Terraform"
+    Purpose   = "AKS Landing Zone Hub"
   }
 }

@@ -7,23 +7,25 @@ This directory contains Terraform code for the hub infrastructure of the Azure A
 - **VNet**: Hub virtual network with segregated subnets (10.0.0.0/16)
   - AzureFirewallSubnet: 10.0.1.0/26
   - AzureBastionSubnet: 10.0.2.0/27
-  - GatewaySubnet: 10.0.3.0/27
-  - Management: 10.0.4.0/24
-  - AppGatewaySubnet: 10.0.5.0/26
-  - DNSResolverInbound: 10.0.6.0/28 (inbound endpoint: 10.0.6.4)
-  - DNSResolverOutbound: 10.0.7.0/28
+  - GatewaySubnet: 10.0.3.0/27 (reserved for future VPN/ExpressRoute gateway)
+  - Management: 10.0.4.0/24 (jump box VM)
+  - DNS Resolver Inbound: 10.0.6.0/28
+  - DNS Resolver Outbound: 10.0.7.0/28
 
-- **Azure Firewall**: Centralized egress control for all spokes
-- **Azure Bastion**: Secure jumpbox access
+- **Azure Firewall**: Centralized egress control for all spokes with AKS-specific rules
+- **Azure Bastion**: Secure jumpbox access to management subnet
+- **Private DNS Resolver**: Hybrid DNS resolution with forwarding rules
 - **Log Analytics Workspace**: Centralized monitoring (30-day retention)
 - **Private DNS Zones**: For private endpoints (ACR, Key Vault, AKS API, Storage, etc.)
+- **Jump Box VM**: Management VM with Azure CLI, kubectl, Helm, and k9s pre-installed
 
 ## Prerequisites
 
-- Terraform >= 1.9
+- Terraform 1.10.5 (pinned for production)
 - Azure CLI >= 2.50
 - Appropriate Azure subscription permissions (Contributor role)
 - Storage account for remote state backend already configured
+- SSH public key for jump box VM authentication
 
 ## Deployment
 
@@ -170,8 +172,8 @@ Default configuration deploys:
 
 To reduce costs:
 - Set `deploy_firewall = false` to remove firewall (~$900/month savings)
-- Set `deploy_application_gateway = false` if not using App Gateway
-- Use Premium Firewall tier only if you need HTTP/S inspection
+- Set `deploy_bastion = false` if you have alternative secure access methods
+- Use Premium Firewall tier only if you need TLS inspection or advanced threat protection
 
 ## Next Steps
 

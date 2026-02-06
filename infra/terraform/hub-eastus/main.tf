@@ -8,7 +8,7 @@ resource "azurerm_resource_group" "hub" {
 # Hub VNet with subnets
 module "hub_vnet" {
   source  = "Azure/avm-res-network-virtualnetwork/azurerm"
-  version = "~> 0.4"
+  version = "0.4.2"
 
   name      = "vnet-hub-${var.environment}-${local.location_code}"
   parent_id = azurerm_resource_group.hub.id
@@ -39,7 +39,7 @@ resource "azurerm_public_ip" "firewall" {
 module "firewall" {
   count   = var.deploy_firewall ? 1 : 0
   source  = "Azure/avm-res-network-azurefirewall/azurerm"
-  version = "~> 0.3"
+  version = "0.3.1"
 
   name                = "afw-hub-${var.environment}-${local.location_code}"
   resource_group_name = azurerm_resource_group.hub.name
@@ -77,7 +77,7 @@ resource "azurerm_firewall_policy" "hub" {
 module "bastion" {
   count   = var.deploy_bastion ? 1 : 0
   source  = "Azure/avm-res-network-bastionhost/azurerm"
-  version = "~> 0.3"
+  version = "0.3.1"
 
   name      = "bas-hub-${var.environment}-${local.location_code}"
   location  = var.location
@@ -96,7 +96,7 @@ module "bastion" {
 # Log Analytics Workspace
 module "log_analytics" {
   source  = "Azure/avm-res-operationalinsights-workspace/azurerm"
-  version = "~> 0.4"
+  version = "0.4.2"
 
   name                = "law-hub-${var.environment}-${local.location_code}"
   resource_group_name = azurerm_resource_group.hub.name
@@ -114,7 +114,7 @@ module "private_dns_zones" {
   for_each = toset(var.private_dns_zones)
 
   source  = "Azure/avm-res-network-privatednszone/azurerm"
-  version = "~> 0.2"
+  version = "0.2.0"
 
   domain_name = each.value
   parent_id   = azurerm_resource_group.hub.id
@@ -230,7 +230,7 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks" {
         type = "Https"
         port = 443
       }
-      source_addresses  = ["*"]
+      source_addresses  = local.allowed_source_addresses
       destination_fqdns = ["*.hcp.${var.location}.azmk8s.io"]
     }
 
@@ -240,7 +240,7 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks" {
         type = "Https"
         port = 443
       }
-      source_addresses  = ["*"]
+      source_addresses  = local.allowed_source_addresses
       destination_fqdns = ["mcr.microsoft.com", "*.cdn.mscr.io", "*.data.mcr.microsoft.com"]
     }
 
@@ -250,7 +250,7 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks" {
         type = "Https"
         port = 443
       }
-      source_addresses = ["*"]
+      source_addresses = local.allowed_source_addresses
       destination_fqdns = [
         "management.azure.com",
         "login.microsoftonline.com",
@@ -265,7 +265,7 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks" {
         type = "Https"
         port = 443
       }
-      source_addresses = ["*"]
+      source_addresses = local.allowed_source_addresses
       destination_fqdns = [
         "*.ods.opinsights.azure.com",
         "*.oms.opinsights.azure.com",
@@ -279,7 +279,7 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks" {
         type = "Https"
         port = 443
       }
-      source_addresses  = ["*"]
+      source_addresses  = local.allowed_source_addresses
       destination_fqdns = ["*.azurecr.io"]
     }
   }
@@ -292,24 +292,24 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks" {
     rule {
       name                  = "dns"
       protocols             = ["UDP", "TCP"]
-      source_addresses      = ["*"]
-      destination_addresses = ["*"]
+      source_addresses      = local.allowed_source_addresses
+      destination_addresses = ["168.63.129.16"] # Azure DNS
       destination_ports     = ["53"]
     }
 
     rule {
       name                  = "ntp"
       protocols             = ["UDP"]
-      source_addresses      = ["*"]
-      destination_addresses = ["*"]
+      source_addresses      = local.allowed_source_addresses
+      destination_addresses = ["ntp.ubuntu.com"]
       destination_ports     = ["123"]
     }
 
     rule {
       name                  = "https"
       protocols             = ["TCP"]
-      source_addresses      = ["*"]
-      destination_addresses = ["*"]
+      source_addresses      = local.allowed_source_addresses
+      destination_addresses = ["AzureCloud"] # Azure service tag
       destination_ports     = ["443"]
     }
   }
@@ -318,6 +318,9 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks" {
 # ===========================
 # Hub-to-Spoke VNet Peering
 # ===========================
+
+# Note: VNet peering is optional and only created when spoke_vnets is configured
+# This prevents errors during initial hub deployment when spokes don't exist yet
 
 data "azurerm_virtual_network" "spoke" {
   for_each = var.spoke_vnets
@@ -430,8 +433,22 @@ resource "azurerm_linux_virtual_machine" "hub_jumpbox" {
     apt-get update -y
     apt-get upgrade -y
     
-    # Install Azure CLI
-    curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+    # Install jq, vim, curl, wget, git from distro packages (verified by package manager)
+    apt-get install -y jq vim curl wget git ca-certificates gnupg lsb-release
+    
+    # Verify apt-installed tools
+    if ! command -v jq >/dev/null 2>&1; then
+      log "ERROR: jq not found after installation."
+      exit 1
+    fi
+    
+    # Install Azure CLI using Microsoft's signed repository
+    log "INFO: Installing Azure CLI from Microsoft repository."
+    curl -sL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | tee /etc/apt/trusted.gpg.d/microsoft.gpg > /dev/null
+    AZ_REPO=$(lsb_release -cs)
+    echo "deb [arch=amd64] https://packages.microsoft.com/repos/azure-cli/ $AZ_REPO main" | tee /etc/apt/sources.list.d/azure-cli.list
+    apt-get update -y
+    apt-get install -y azure-cli
     
     # Verify Azure CLI installation
     if ! command -v az >/dev/null 2>&1; then
@@ -439,11 +456,21 @@ resource "azurerm_linux_virtual_machine" "hub_jumpbox" {
       exit 1
     fi
     
-    # Install kubectl
+    # Install kubectl with checksum verification
+    log "INFO: Installing kubectl with checksum verification."
     KUBECTL_VERSION="$(curl -L -s https://dl.k8s.io/release/stable.txt)"
-    curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+    curl -LO "https://dl.k8s.io/release/$${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+    curl -LO "https://dl.k8s.io/$${KUBECTL_VERSION}/bin/linux/amd64/kubectl.sha256"
+    
+    # Verify kubectl checksum
+    echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check || {
+      log "ERROR: kubectl checksum verification failed."
+      exit 1
+    }
+    
     chmod +x kubectl
     mv kubectl /usr/local/bin/
+    rm -f kubectl.sha256
     
     # Verify kubectl installation
     if ! command -v kubectl >/dev/null 2>&1; then
@@ -451,8 +478,24 @@ resource "azurerm_linux_virtual_machine" "hub_jumpbox" {
       exit 1
     fi
     
-    # Install Helm
-    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+    # Install Helm from official GitHub releases with checksum verification
+    log "INFO: Installing Helm from GitHub releases."
+    HELM_VERSION="v3.13.3"
+    HELM_TARBALL="helm-$${HELM_VERSION}-linux-amd64.tar.gz"
+    HELM_CHECKSUM_URL="https://get.helm.sh/$${HELM_TARBALL}.sha256sum"
+    
+    curl -LO "https://get.helm.sh/$${HELM_TARBALL}"
+    curl -LO "$${HELM_CHECKSUM_URL}"
+    
+    # Verify Helm checksum
+    sha256sum --check "$${HELM_TARBALL}.sha256sum" --ignore-missing || {
+      log "ERROR: Helm checksum verification failed."
+      exit 1
+    }
+    
+    tar -zxvf "$${HELM_TARBALL}"
+    mv linux-amd64/helm /usr/local/bin/helm
+    rm -rf linux-amd64 "$${HELM_TARBALL}" "$${HELM_TARBALL}.sha256sum"
     
     # Verify Helm installation
     if ! command -v helm >/dev/null 2>&1; then
@@ -460,21 +503,29 @@ resource "azurerm_linux_virtual_machine" "hub_jumpbox" {
       exit 1
     fi
     
-    # Install k9s
-    curl -sS https://webinstall.dev/k9s | bash
+    # Install k9s from official GitHub releases with checksum verification
+    log "INFO: Installing k9s from GitHub releases."
+    K9S_VERSION="v0.31.7"
+    K9S_TARBALL="k9s_Linux_amd64.tar.gz"
+    K9S_URL="https://github.com/derailed/k9s/releases/download/$${K9S_VERSION}/$${K9S_TARBALL}"
+    K9S_CHECKSUM_URL="https://github.com/derailed/k9s/releases/download/$${K9S_VERSION}/checksums.sha256"
+    
+    curl -LO "$${K9S_URL}"
+    curl -LO "$${K9S_CHECKSUM_URL}"
+    
+    # Verify k9s checksum
+    grep "$${K9S_TARBALL}" checksums.sha256 | sha256sum --check || {
+      log "ERROR: k9s checksum verification failed."
+      exit 1
+    }
+    
+    tar -zxvf "$${K9S_TARBALL}" k9s
+    mv k9s /usr/local/bin/k9s
+    rm -f "$${K9S_TARBALL}" checksums.sha256
     
     # Verify k9s installation
     if ! command -v k9s >/dev/null 2>&1; then
       log "ERROR: k9s not found after installation."
-      exit 1
-    fi
-    
-    # Install jq and other tools
-    apt-get install -y jq vim curl wget git
-    
-    # Verify jq installation (as representative of apt-installed tools)
-    if ! command -v jq >/dev/null 2>&1; then
-      log "ERROR: jq not found after installation."
       exit 1
     fi
     
