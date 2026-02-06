@@ -14,16 +14,21 @@ parameters:
     default: 'backend-prod.tfbackend'
 
 steps:
-  - task: AzureCLI@2
+  - task: Bash@3
     displayName: 'Terraform Init with OIDC'
     inputs:
-      azureSubscription: '${{ parameters.serviceConnection }}'
-      scriptType: 'bash'
-      scriptLocation: 'inlineScript'
+      targetType: 'inline'
       workingDirectory: '${{ parameters.workingDirectory }}'
-      addSpnToEnvironment: false
-      inlineScript: |
+      script: |
         set -e
+        
+        # Clear any Azure CLI environment variables that conflict with OIDC
+        unset AZURE_SUBSCRIPTION_ID
+        unset AZURE_TENANT_ID
+        unset AZURE_CLIENT_ID
+        unset AZURE_CLIENT_SECRET
+        unset AZURE_USERNAME
+        unset AZURE_PASSWORD
         
         echo "##[section]Installing Terraform..."
         terraform version
