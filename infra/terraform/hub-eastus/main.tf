@@ -400,31 +400,82 @@ resource "azurerm_linux_virtual_machine" "hub_jumpbox" {
 
   custom_data = base64encode(<<-EOT
     #!/bin/bash
-    set -e
+    set -euo pipefail
+    
+    LOG_FILE="/var/log/jumpbox-setup.log"
+    
+    # Ensure log directory and file exist
+    mkdir -p "$(dirname "$LOG_FILE")"
+    touch "$LOG_FILE"
+    chmod 644 "$LOG_FILE"
+    
+    # Redirect all output to log file
+    exec >>"$LOG_FILE" 2>&1
+    
+    log() {
+      echo "$(date -Iseconds) [$$] $*"
+    }
+    
+    # Trap any error and log before exiting
+    trap 'log "ERROR: Jump box provisioning failed at line $LINENO."; exit 1' ERR
+    
+    log "INFO: Starting jump box provisioning."
+    
+    export DEBIAN_FRONTEND=noninteractive
     
     # Update system
-    apt-get update
+    apt-get update -y
     apt-get upgrade -y
     
     # Install Azure CLI
     curl -sL https://aka.ms/InstallAzureCLIDeb | bash
     
+    # Verify Azure CLI installation
+    if ! command -v az >/dev/null 2>&1; then
+      log "ERROR: Azure CLI (az) not found after installation."
+      exit 1
+    fi
+    
     # Install kubectl
-    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+    KUBECTL_VERSION="$(curl -L -s https://dl.k8s.io/release/stable.txt)"
+    curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
     chmod +x kubectl
     mv kubectl /usr/local/bin/
+    
+    # Verify kubectl installation
+    if ! command -v kubectl >/dev/null 2>&1; then
+      log "ERROR: kubectl not found after installation."
+      exit 1
+    fi
     
     # Install Helm
     curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
     
+    # Verify Helm installation
+    if ! command -v helm >/dev/null 2>&1; then
+      log "ERROR: Helm not found after installation."
+      exit 1
+    fi
+    
     # Install k9s
     curl -sS https://webinstall.dev/k9s | bash
+    
+    # Verify k9s installation
+    if ! command -v k9s >/dev/null 2>&1; then
+      log "ERROR: k9s not found after installation."
+      exit 1
+    fi
     
     # Install jq and other tools
     apt-get install -y jq vim curl wget git
     
-    # Configure Azure CLI to use system identity if available
-    echo "Jump box provisioning complete" >> /var/log/jumpbox-setup.log
+    # Verify jq installation (as representative of apt-installed tools)
+    if ! command -v jq >/dev/null 2>&1; then
+      log "ERROR: jq not found after installation."
+      exit 1
+    fi
+    
+    log "INFO: Jump box provisioning completed successfully."
   EOT
   )
 
