@@ -103,3 +103,18 @@ output "spoke_jumpbox_id" {
   description = "Spoke jump box VM resource ID"
   value       = azurerm_linux_virtual_machine.spoke_jumpbox.id
 }
+
+output "web_app_routing_enabled" {
+  description = "Whether Web App Routing (NGINX ingress) add-on is enabled"
+  value       = var.enable_web_app_routing
+}
+
+output "nginx_internal_lb_ip" {
+  description = "Static internal IP address configured for NGINX ingress controller load balancer"
+  value       = var.enable_web_app_routing ? var.nginx_internal_lb_ip : null
+}
+
+output "nginx_configuration_note" {
+  description = "Instructions for configuring NGINX ingress controller with internal load balancer"
+  value       = var.enable_web_app_routing ? "After deployment, create a NginxIngressController resource with loadBalancerAnnotations set to 'service.beta.kubernetes.io/azure-load-balancer-internal: true'. See README for details." : null
+}

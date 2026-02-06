@@ -21,6 +21,8 @@ enable_managed_identity  = true
 enable_azure_policy      = true
 enable_workload_identity = true
 enable_monitoring        = true
+enable_web_app_routing   = true
+nginx_internal_lb_ip     = "10.1.0.50"
 hub_resource_group_name  = "rg-hub-eus2-dev"
 hub_name                 = "hub-eastus"
 

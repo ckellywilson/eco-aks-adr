@@ -134,6 +134,24 @@ variable "enable_monitoring" {
   default     = true
 }
 
+variable "enable_web_app_routing" {
+  description = "Enable the Azure-managed NGINX ingress controller (Web App Routing add-on)"
+  type        = bool
+  default     = false
+}
+
+variable "web_app_routing_dns_zone_ids" {
+  description = "List of Azure DNS zone IDs for Web App Routing add-on to manage DNS records. Leave empty for no DNS integration."
+  type        = list(string)
+  default     = []
+}
+
+variable "nginx_internal_lb_ip" {
+  description = "Static internal IP address for NGINX ingress controller load balancer. Must be from AKS nodes subnet range."
+  type        = string
+  default     = "10.1.0.50"
+}
+
 variable "hub_resource_group_name" {
   description = "Hub resource group name for data source"
   type        = string

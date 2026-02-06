@@ -8,8 +8,11 @@
 # Generated Terraform Code (Users generate this in their own repos)
 # ============================================================================
 tfplan
+# Allow Terraform files in infra/ directory
 *.tf
+!infra/**/*.tf
 *.tfvars
+!infra/**/*.tfvars
 # EXCEPTION: Keep example tfvars in .github/examples/
 !.github/examples/*.tfvars
 
@@ -46,10 +49,11 @@ environments/
 # ============================================================================
 # Generated Infrastructure Directories (Users create in their repos)
 # ============================================================================
-hub/
-spoke-aks/
-spoke-*/
-workloads/
+# Allow infrastructure directories - users implement their code here
+# hub/
+# spoke-aks/
+# spoke-*/
+# workloads/
 
 # ============================================================================
 # Azure CLI and Local Configuration
