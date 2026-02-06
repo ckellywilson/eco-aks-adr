@@ -1,0 +1,228 @@
+# Azure DevOps Pipeline for Terraform Deployment
+# File: azure-pipelines.yml
+# Location: Repository root
+# This pipeline handles hub and spoke infrastructure deployment with OIDC authentication
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - infra/terraform/**
+      - azure-pipelines.yml
+
+variables:
+  terraform_version: 1.10.5
+  # Set these in ADO Pipeline Variables:
+  # - AZURE_SUBSCRIPTION_ID: Your subscription ID
+  # - AZURE_TENANT_ID: Your Azure tenant ID
+  # - AZURE_CLIENT_ID: Workload Identity service principal client ID
+
+stages:
+  - stage: Validate
+    displayName: Validate Terraform Code
+    jobs:
+      - job: ValidateHub
+        displayName: Validate Hub Configuration
+        steps:
+          - checkout: self
+
+          - task: TerraformInstaller@0
+            inputs:
+              terraformVersion: $(terraform_version)
+
+          - task: TerraformTaskV4@4
+            inputs:
+              command: 'init'
+              workingDirectory: 'infra/terraform/hub-eastus'
+              backendServiceArm: 'azure-terraform-connection'
+              backendAzureRmResourceGroupName: 'rg-terraform-state-dev'
+              backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
+              backendAzureRmContainerName: 'terraform-state-dev'
+              backendAzureRmKey: 'hub-eastus/terraform.tfstate'
+
+          - task: TerraformTaskV4@4
+            inputs:
+              command: 'validate'
+              workingDirectory: 'infra/terraform/hub-eastus'
+
+      - job: ValidateSpoke
+        displayName: Validate Spoke Configuration
+        steps:
+          - checkout: self
+
+          - task: TerraformInstaller@0
+            inputs:
+              terraformVersion: $(terraform_version)
+
+          - task: TerraformTaskV4@4
+            inputs:
+              command: 'init'
+              workingDirectory: 'infra/terraform/spoke-aks-prod'
+              backendServiceArm: 'azure-terraform-connection'
+              backendAzureRmResourceGroupName: 'rg-terraform-state-dev'
+              backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
+              backendAzureRmContainerName: 'terraform-state-dev'
+              backendAzureRmKey: 'spoke-aks-prod/terraform.tfstate'
+
+          - task: TerraformTaskV4@4
+            inputs:
+              command: 'validate'
+              workingDirectory: 'infra/terraform/spoke-aks-prod'
+
+  - stage: PlanHub
+    displayName: Plan Hub Infrastructure
+    dependsOn: Validate
+    condition: succeeded()
+    jobs:
+      - job: PlanHubJob
+        displayName: Terraform Plan - Hub
+        steps:
+          - checkout: self
+
+          - task: TerraformInstaller@0
+            inputs:
+              terraformVersion: $(terraform_version)
+
+          - task: TerraformTaskV4@4
+            inputs:
+              command: 'init'
+              workingDirectory: 'infra/terraform/hub-eastus'
+              backendServiceArm: 'azure-terraform-connection'
+              backendAzureRmResourceGroupName: 'rg-terraform-state-dev'
+              backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
+              backendAzureRmContainerName: 'terraform-state-dev'
+              backendAzureRmKey: 'hub-eastus/terraform.tfstate'
+
+          - task: TerraformTaskV4@4
+            inputs:
+              command: 'plan'
+              workingDirectory: 'infra/terraform/hub-eastus'
+              commandOptions: '-var-file=prod.tfvars -var="subscription_id=$(AZURE_SUBSCRIPTION_ID)" -out=tfplan.prod'
+              environmentServiceNameAzureRM: 'azure-terraform-connection'
+
+          - task: PublishBuildArtifacts@1
+            inputs:
+              PathtoPublish: 'infra/terraform/hub-eastus/tfplan.prod'
+              ArtifactName: 'hub-tfplan'
+
+  - stage: ApplyHub
+    displayName: Apply Hub Infrastructure
+    dependsOn: PlanHub
+    condition: succeeded()
+    jobs:
+      - deployment: ApplyHubJob
+        displayName: Terraform Apply - Hub
+        environment: 'production'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: TerraformInstaller@0
+                  inputs:
+                    terraformVersion: $(terraform_version)
+
+                - task: DownloadBuildArtifacts@1
+                  inputs:
+                    buildType: 'current'
+                    downloadType: 'specific'
+                    itemPattern: 'hub-tfplan/**'
+                    downloadPath: '$(System.DefaultWorkingDirectory)'
+
+                - task: TerraformTaskV4@4
+                  inputs:
+                    command: 'init'
+                    workingDirectory: 'infra/terraform/hub-eastus'
+                    backendServiceArm: 'azure-terraform-connection'
+                    backendAzureRmResourceGroupName: 'rg-terraform-state-dev'
+                    backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
+                    backendAzureRmContainerName: 'terraform-state-dev'
+                    backendAzureRmKey: 'hub-eastus/terraform.tfstate'
+
+                - task: TerraformTaskV4@4
+                  inputs:
+                    command: 'apply'
+                    workingDirectory: 'infra/terraform/hub-eastus'
+                    commandOptions: '$(System.DefaultWorkingDirectory)/hub-tfplan/tfplan.prod'
+                    environmentServiceNameAzureRM: 'azure-terraform-connection'
+
+  - stage: PlanSpoke
+    displayName: Plan Spoke Infrastructure
+    dependsOn: ApplyHub
+    condition: succeeded()
+    jobs:
+      - job: PlanSpokeJob
+        displayName: Terraform Plan - Spoke
+        steps:
+          - checkout: self
+
+          - task: TerraformInstaller@0
+            inputs:
+              terraformVersion: $(terraform_version)
+
+          - task: TerraformTaskV4@4
+            inputs:
+              command: 'init'
+              workingDirectory: 'infra/terraform/spoke-aks-prod'
+              backendServiceArm: 'azure-terraform-connection'
+              backendAzureRmResourceGroupName: 'rg-terraform-state-dev'
+              backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
+              backendAzureRmContainerName: 'terraform-state-dev'
+              backendAzureRmKey: 'spoke-aks-prod/terraform.tfstate'
+
+          - task: TerraformTaskV4@4
+            inputs:
+              command: 'plan'
+              workingDirectory: 'infra/terraform/spoke-aks-prod'
+              commandOptions: '-var-file=prod.tfvars -var="subscription_id=$(AZURE_SUBSCRIPTION_ID)" -out=tfplan.prod'
+              environmentServiceNameAzureRM: 'azure-terraform-connection'
+
+          - task: PublishBuildArtifacts@1
+            inputs:
+              PathtoPublish: 'infra/terraform/spoke-aks-prod/tfplan.prod'
+              ArtifactName: 'spoke-tfplan'
+
+  - stage: ApplySpoke
+    displayName: Apply Spoke Infrastructure
+    dependsOn: PlanSpoke
+    condition: succeeded()
+    jobs:
+      - deployment: ApplySpokeJob
+        displayName: Terraform Apply - Spoke
+        environment: 'production'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: TerraformInstaller@0
+                  inputs:
+                    terraformVersion: $(terraform_version)
+
+                - task: DownloadBuildArtifacts@1
+                  inputs:
+                    buildType: 'current'
+                    downloadType: 'specific'
+                    itemPattern: 'spoke-tfplan/**'
+                    downloadPath: '$(System.DefaultWorkingDirectory)'
+
+                - task: TerraformTaskV4@4
+                  inputs:
+                    command: 'init'
+                    workingDirectory: 'infra/terraform/spoke-aks-prod'
+                    backendServiceArm: 'azure-terraform-connection'
+                    backendAzureRmResourceGroupName: 'rg-terraform-state-dev'
+                    backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
+                    backendAzureRmContainerName: 'terraform-state-dev'
+                    backendAzureRmKey: 'spoke-aks-prod/terraform.tfstate'
+
+                - task: TerraformTaskV4@4
+                  inputs:
+                    command: 'apply'
+                    workingDirectory: 'infra/terraform/spoke-aks-prod'
+                    commandOptions: '$(System.DefaultWorkingDirectory)/spoke-tfplan/tfplan.prod'
+                    environmentServiceNameAzureRM: 'azure-terraform-connection'

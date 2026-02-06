@@ -1,0 +1,184 @@
+# Reference: This is an Azure DevOps Pipeline template
+# For GitHub Actions, adapt accordingly
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - infra/terraform/**
+
+variables:
+  terraform_version: '1.10'
+  azure_subscription_id: $(AZURE_SUBSCRIPTION_ID)
+  azure_tenant_id: $(AZURE_TENANT_ID)
+
+stages:
+  - stage: HubDeploy
+    displayName: Deploy Hub Infrastructure
+    jobs:
+      - job: PlanHub
+        displayName: Terraform Plan - Hub
+        steps:
+          - checkout: self
+
+          - task: ms-devlabs.custom-terraform-tasks.custom-terraform-installer-task.TerraformInstaller@0
+            displayName: Install Terraform
+            inputs:
+              terraformVersion: $(terraform_version)
+
+          - task: TerraformTaskV4@4
+            displayName: Terraform Init - Hub
+            inputs:
+              command: 'init'
+              workingDirectory: '$(System.DefaultWorkingDirectory)/infra/terraform/hub-eastus'
+              backendServiceArm: '$(azure_service_connection)'
+              backendAzureRmResourceGroupName: 'rg-terraform-state-dev'
+              backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
+              backendAzureRmContainerName: 'terraform-state-dev'
+              backendAzureRmKey: 'hub-eastus/terraform.tfstate'
+            env:
+              ARM_USE_OIDC: 'true'
+              ARM_TENANT_ID: $(AZURE_TENANT_ID)
+              ARM_CLIENT_ID: $(AZURE_CLIENT_ID)
+              ARM_SUBSCRIPTION_ID: $(azure_subscription_id)
+
+          - task: TerraformTaskV4@4
+            displayName: Terraform Plan - Hub
+            inputs:
+              command: 'plan'
+              workingDirectory: '$(System.DefaultWorkingDirectory)/infra/terraform/hub-eastus'
+              commandOptions: '-var-file="prod.tfvars" -var="subscription_id=$(azure_subscription_id)" -out=tfplan.prod'
+              environmentServiceNameAzureRM: '$(azure_service_connection)'
+            env:
+              ARM_USE_OIDC: 'true'
+              ARM_TENANT_ID: $(AZURE_TENANT_ID)
+              ARM_CLIENT_ID: $(AZURE_CLIENT_ID)
+              ARM_SUBSCRIPTION_ID: $(azure_subscription_id)
+
+      - job: ApplyHub
+        displayName: Terraform Apply - Hub
+        dependsOn: PlanHub
+        condition: succeeded()
+        steps:
+          - checkout: self
+
+          - task: ms-devlabs.custom-terraform-tasks.custom-terraform-installer-task.TerraformInstaller@0
+            displayName: Install Terraform
+            inputs:
+              terraformVersion: $(terraform_version)
+
+          - task: TerraformTaskV4@4
+            displayName: Terraform Init - Hub
+            inputs:
+              command: 'init'
+              workingDirectory: '$(System.DefaultWorkingDirectory)/infra/terraform/hub-eastus'
+              backendServiceArm: '$(azure_service_connection)'
+              backendAzureRmResourceGroupName: 'rg-terraform-state-dev'
+              backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
+              backendAzureRmContainerName: 'terraform-state-dev'
+              backendAzureRmKey: 'hub-eastus/terraform.tfstate'
+            env:
+              ARM_USE_OIDC: 'true'
+              ARM_TENANT_ID: $(AZURE_TENANT_ID)
+              ARM_CLIENT_ID: $(AZURE_CLIENT_ID)
+              ARM_SUBSCRIPTION_ID: $(azure_subscription_id)
+
+          - task: TerraformTaskV4@4
+            displayName: Terraform Apply - Hub
+            inputs:
+              command: 'apply'
+              workingDirectory: '$(System.DefaultWorkingDirectory)/infra/terraform/hub-eastus'
+              commandOptions: '-var-file="prod.tfvars" -var="subscription_id=$(azure_subscription_id)" -auto-approve'
+              environmentServiceNameAzureRM: '$(azure_service_connection)'
+            env:
+              ARM_USE_OIDC: 'true'
+              ARM_TENANT_ID: $(AZURE_TENANT_ID)
+              ARM_CLIENT_ID: $(AZURE_CLIENT_ID)
+              ARM_SUBSCRIPTION_ID: $(azure_subscription_id)
+
+  - stage: SpokeDeploy
+    displayName: Deploy Spoke Infrastructure
+    dependsOn: HubDeploy
+    condition: succeeded()
+    jobs:
+      - job: PlanSpoke
+        displayName: Terraform Plan - Spoke
+        steps:
+          - checkout: self
+
+          - task: ms-devlabs.custom-terraform-tasks.custom-terraform-installer-task.TerraformInstaller@0
+            displayName: Install Terraform
+            inputs:
+              terraformVersion: $(terraform_version)
+
+          - task: TerraformTaskV4@4
+            displayName: Terraform Init - Spoke
+            inputs:
+              command: 'init'
+              workingDirectory: '$(System.DefaultWorkingDirectory)/infra/terraform/spoke-aks-prod'
+              backendServiceArm: '$(azure_service_connection)'
+              backendAzureRmResourceGroupName: 'rg-terraform-state-dev'
+              backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
+              backendAzureRmContainerName: 'terraform-state-dev'
+              backendAzureRmKey: 'spoke-aks-prod/terraform.tfstate'
+            env:
+              ARM_USE_OIDC: 'true'
+              ARM_TENANT_ID: $(AZURE_TENANT_ID)
+              ARM_CLIENT_ID: $(AZURE_CLIENT_ID)
+              ARM_SUBSCRIPTION_ID: $(azure_subscription_id)
+
+          - task: TerraformTaskV4@4
+            displayName: Terraform Plan - Spoke
+            inputs:
+              command: 'plan'
+              workingDirectory: '$(System.DefaultWorkingDirectory)/infra/terraform/spoke-aks-prod'
+              commandOptions: '-var-file="prod.tfvars" -var="subscription_id=$(azure_subscription_id)" -out=tfplan.prod'
+              environmentServiceNameAzureRM: '$(azure_service_connection)'
+            env:
+              ARM_USE_OIDC: 'true'
+              ARM_TENANT_ID: $(AZURE_TENANT_ID)
+              ARM_CLIENT_ID: $(AZURE_CLIENT_ID)
+              ARM_SUBSCRIPTION_ID: $(azure_subscription_id)
+
+      - job: ApplySpoke
+        displayName: Terraform Apply - Spoke
+        dependsOn: PlanSpoke
+        condition: succeeded()
+        steps:
+          - checkout: self
+
+          - task: ms-devlabs.custom-terraform-tasks.custom-terraform-installer-task.TerraformInstaller@0
+            displayName: Install Terraform
+            inputs:
+              terraformVersion: $(terraform_version)
+
+          - task: TerraformTaskV4@4
+            displayName: Terraform Init - Spoke
+            inputs:
+              command: 'init'
+              workingDirectory: '$(System.DefaultWorkingDirectory)/infra/terraform/spoke-aks-prod'
+              backendServiceArm: '$(azure_service_connection)'
+              backendAzureRmResourceGroupName: 'rg-terraform-state-dev'
+              backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
+              backendAzureRmContainerName: 'terraform-state-dev'
+              backendAzureRmKey: 'spoke-aks-prod/terraform.tfstate'
+            env:
+              ARM_USE_OIDC: 'true'
+              ARM_TENANT_ID: $(AZURE_TENANT_ID)
+              ARM_CLIENT_ID: $(AZURE_CLIENT_ID)
+              ARM_SUBSCRIPTION_ID: $(azure_subscription_id)
+
+          - task: TerraformTaskV4@4
+            displayName: Terraform Apply - Spoke
+            inputs:
+              command: 'apply'
+              workingDirectory: '$(System.DefaultWorkingDirectory)/infra/terraform/spoke-aks-prod'
+              commandOptions: '-var-file="prod.tfvars" -var="subscription_id=$(azure_subscription_id)" -auto-approve'
+              environmentServiceNameAzureRM: '$(azure_service_connection)'
+            env:
+              ARM_USE_OIDC: 'true'
+              ARM_TENANT_ID: $(AZURE_TENANT_ID)
+              ARM_CLIENT_ID: $(AZURE_CLIENT_ID)
+              ARM_SUBSCRIPTION_ID: $(azure_subscription_id)

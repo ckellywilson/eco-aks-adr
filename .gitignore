@@ -41,6 +41,14 @@ override.tf.json
 *_override.tf.json
 
 # ============================================================================
+# Backend Configuration Files (Environment-specific)
+# ============================================================================
+# EXCLUDE all backend config files - use .tfbackend.example templates instead
+*.tfbackend
+# EXCEPTION: Keep example backend configs for reference
+!**/*.tfbackend.example
+
+# ============================================================================
 # Terraform Variable Files (Environment-specific)
 # ============================================================================
 # Users create these in their repos
