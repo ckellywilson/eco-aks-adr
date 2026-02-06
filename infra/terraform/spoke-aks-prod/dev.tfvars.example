@@ -1,0 +1,70 @@
+# Spoke AKS Development Environment Variables
+# ============================================================================
+# INSTRUCTIONS:
+# 1. Copy this file to dev.tfvars (which is gitignored)
+# 2. Replace placeholder values with your actual subscription and configuration
+# 3. For sensitive values (SSH keys), use Azure Key Vault or pass via TF_VAR_* env vars
+#
+# NEVER commit actual tfvars files to version control
+# ============================================================================
+
+# Azure subscription ID
+# Obtain from: az account show --query id
+subscription_id = "your-subscription-id-here"
+
+# Environment and location
+environment      = "dev"
+location         = "eastus"
+location_code    = "eus"
+resource_group_name = "rg-aks-eus-dev"
+
+# Network configuration
+spoke_vnet_address_space = ["10.1.0.0/16"]
+
+# AKS Cluster configuration
+aks_cluster_name = "aks-eco-dev-eus"
+kubernetes_version = "1.30"
+aks_sku_tier     = "Standard"
+
+# AKS Networking
+aks_network_plugin   = "azure"
+aks_network_policy   = "cilium"
+aks_pod_cidr         = "192.168.0.0/16"
+aks_service_cidr     = "172.16.0.0/16"
+aks_dns_service_ip   = "172.16.0.10"
+
+# Node pools (smaller for dev)
+system_node_pool_size   = "Standard_D2s_v3"
+system_node_pool_count  = 1
+user_node_pool_size     = "Standard_D2s_v3"
+user_node_pool_count    = 1
+
+# Security features
+enable_private_cluster    = false
+enable_managed_identity   = true
+enable_azure_policy       = true
+enable_workload_identity  = true
+
+# Monitoring and integrations
+enable_monitoring      = true
+enable_web_app_routing = true
+
+# Internal load balancer IP
+nginx_internal_lb_ip = "10.1.0.50"
+
+# Hub connectivity
+hub_resource_group_name = "rg-hub-eus-dev"
+hub_name                = "hub-eastus"
+
+# SSH public key for VM access
+# Generate a new key: ssh-keygen -t ed25519 -C "your-email@example.com"
+# Get public key: cat ~/.ssh/id_ed25519.pub
+# WARNING: Do not commit actual SSH keys to version control
+admin_ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM... your-public-key-here"
+
+# Resource tags
+tags = {
+  Environment = "dev"
+  ManagedBy   = "Terraform"
+  Purpose     = "AKS Spoke - Development"
+}

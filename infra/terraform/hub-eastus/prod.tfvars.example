@@ -1,0 +1,51 @@
+# Hub Production Environment Variables
+# ============================================================================
+# INSTRUCTIONS:
+# 1. Copy this file to prod.tfvars (which is gitignored)
+# 2. Replace placeholder values with your actual subscription and configuration
+# 3. For sensitive values (SSH keys), use Azure Key Vault or pass via TF_VAR_* env vars
+#
+# NEVER commit actual tfvars files to version control
+# ============================================================================
+
+# Azure subscription ID
+# Obtain from: az account show --query id
+subscription_id = "your-subscription-id-here"
+
+environment         = "prod"
+location            = "eastus2"
+location_code       = "eus2"
+resource_group_name = "rg-hub-eus2-prod"
+
+# Network configuration
+hub_vnet_address_space = ["10.0.0.0/16"]
+
+# Firewall configuration
+firewall_sku_tier = "Standard"
+deploy_firewall   = true
+
+# Bastion configuration
+bastion_sku     = "Standard"
+deploy_bastion  = true
+
+# DNS Resolver
+deploy_dns_resolver = true
+
+# Logging
+log_retention_days  = 30
+log_analytics_sku   = "PerGB2018"
+
+# Firewall availability zones (empty list = no zones, Standard SKU)
+firewall_availability_zones = []
+
+# SSH public key for VM access
+# Generate a new key: ssh-keygen -t ed25519 -C "your-email@example.com"
+# Get public key: cat ~/.ssh/id_ed25519.pub
+# WARNING: Do not commit actual SSH keys to version control
+admin_ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM... your-public-key-here"
+
+# Resource tags
+tags = {
+  Purpose   = "AKS Landing Zone Hub"
+  ManagedBy = "Terraform"
+}
