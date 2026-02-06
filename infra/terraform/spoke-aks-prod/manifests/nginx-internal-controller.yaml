@@ -29,6 +29,7 @@ spec:
     service.beta.kubernetes.io/azure-load-balancer-internal: "true"
     
     # Assign static private IP from AKS nodes subnet (10.1.0.0/22)
+    service.beta.kubernetes.io/azure-load-balancer-internal-ip: "10.1.0.50"
     service.beta.kubernetes.io/azure-load-balancer-internal-subnet: "aks-nodes"
     service.beta.kubernetes.io/azure-pip-name: ""  # No public IP
     
