@@ -21,7 +21,7 @@ steps:
       scriptType: 'bash'
       scriptLocation: 'inlineScript'
       workingDirectory: '${{ parameters.workingDirectory }}'
-      addSpnToEnvironment: true
+      addSpnToEnvironment: false
       useClassicSubscriptionApi: false
       inlineScript: |
         set -e
@@ -36,3 +36,8 @@ steps:
           -upgrade
         
         echo "##[section]Terraform initialized successfully"
+    env:
+      ARM_USE_OIDC: true
+      ARM_CLIENT_ID: $(AZURE_CLIENT_ID)
+      ARM_TENANT_ID: $(AZURE_TENANT_ID)
+      ARM_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
