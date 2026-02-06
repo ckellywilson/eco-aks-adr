@@ -398,6 +398,9 @@ resource "azurerm_linux_virtual_machine" "hub_jumpbox" {
     version   = "latest"
   }
 
+  identity {
+    type = "SystemAssigned"
+  }
   custom_data = base64encode(<<-EOT
     #!/bin/bash
     set -euo pipefail
