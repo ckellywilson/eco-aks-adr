@@ -15,20 +15,20 @@ parameters:
 
 steps:
   - task: AzureCLI@2
-    displayName: 'Terraform Init'
+    displayName: 'Terraform Init with OIDC'
     inputs:
       azureSubscription: '${{ parameters.serviceConnection }}'
       scriptType: 'bash'
       scriptLocation: 'inlineScript'
       workingDirectory: '${{ parameters.workingDirectory }}'
-      addSpnToEnvironment: true
+      addSpnToEnvironment: false
       inlineScript: |
         set -e
         
         echo "##[section]Installing Terraform..."
         terraform version
         
-        echo "##[section]Initializing Terraform with backend configuration..."
+        echo "##[section]Initializing Terraform with OIDC authentication..."
         terraform init \
           -backend-config="${{ parameters.backendFile }}" \
           -reconfigure \
