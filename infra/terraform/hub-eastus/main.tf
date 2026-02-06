@@ -319,8 +319,22 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks" {
 # Hub-to-Spoke VNet Peering
 # ===========================
 
-# Note: VNet peering is optional and only created when spoke_vnets is configured
-# This prevents errors during initial hub deployment when spokes don't exist yet
+# VNet Peering Configuration
+# ---------------------------
+# This section configures bidirectional peering between the hub and spoke VNets.
+# 
+# IMPORTANT: These resources are optional and only created when var.spoke_vnets 
+# contains entries. The for_each loop handles empty maps gracefully, allowing 
+# the hub to be deployed independently without any spokes existing.
+#
+# Deployment workflow:
+# 1. Initial hub deployment: Leave spoke_vnets = {} (default)
+# 2. Deploy spoke infrastructure
+# 3. Update hub tfvars with spoke_vnets configuration
+# 4. Reapply hub to establish peering connections
+#
+# The data source will only query for VNets that are listed in var.spoke_vnets,
+# so it won't fail on initial deployment when the variable is empty.
 
 data "azurerm_virtual_network" "spoke" {
   for_each = var.spoke_vnets
@@ -329,6 +343,8 @@ data "azurerm_virtual_network" "spoke" {
   resource_group_name = each.value.resource_group_name
 }
 
+# Hub-to-Spoke Peering
+# Creates peering from hub VNet to each spoke VNet
 resource "azurerm_virtual_network_peering" "hub_to_spoke" {
   for_each = var.spoke_vnets
 
@@ -342,6 +358,9 @@ resource "azurerm_virtual_network_peering" "hub_to_spoke" {
   use_remote_gateways          = false
 }
 
+# Spoke-to-Hub Peering
+# Creates peering from each spoke VNet back to the hub VNet
+# This establishes bidirectional connectivity
 resource "azurerm_virtual_network_peering" "spoke_to_hub" {
   for_each = var.spoke_vnets
 

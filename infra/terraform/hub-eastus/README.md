@@ -175,13 +175,60 @@ To reduce costs:
 - Set `deploy_bastion = false` if you have alternative secure access methods
 - Use Premium Firewall tier only if you need TLS inspection or advanced threat protection
 
+## VNet Peering Configuration
+
+The hub infrastructure includes optional VNet peering configuration for connecting spoke networks. By default, `spoke_vnets` is an empty map, allowing the hub to be deployed independently without any spokes.
+
+### Initial Deployment (No Spokes)
+
+On first deployment, leave `spoke_vnets` empty in your tfvars file:
+
+```hcl
+# dev.tfvars or prod.tfvars
+spoke_vnets = {}
+```
+
+This will deploy the hub without any peering connections, which is the recommended approach for initial setup.
+
+### Adding Spoke Peering (After Spoke Deployment)
+
+After deploying spoke infrastructure, update your tfvars file to configure peering:
+
+```hcl
+# dev.tfvars or prod.tfvars
+spoke_vnets = {
+  "spoke-aks-prod" = {
+    name                = "vnet-spoke-aks-eus2-prod"
+    resource_group_name = "rg-spoke-aks-eus2-prod"
+    address_space       = ["10.1.0.0/16"]
+  }
+  "spoke-data" = {
+    name                = "vnet-spoke-data-eus2-prod"
+    resource_group_name = "rg-spoke-data-eus2-prod"
+    address_space       = ["10.2.0.0/16"]
+  }
+}
+
+spoke_vnet_address_spaces = ["10.1.0.0/16", "10.2.0.0/16"]
+```
+
+Then run `terraform plan` and `terraform apply` to create the peering connections.
+
+### Important Notes
+
+- VNet peering is bidirectional and will be created in both hub and spoke resource groups
+- Spoke VNets must exist before configuring peering (data source will fail otherwise)
+- The `spoke_vnet_address_spaces` variable is used for firewall source address restrictions
+- Peering allows forwarded traffic to enable hub firewall routing
+
 ## Next Steps
 
-1. Deploy hub infrastructure
+1. Deploy hub infrastructure (without spokes)
 2. Generate outputs: `hub-eastus-outputs.json`
 3. Review outputs
 4. Deploy spoke infrastructure referencing hub outputs
-5. Configure firewall rules as needed for spoke traffic
+5. Update hub configuration with spoke_vnets and redeploy to establish peering
+6. Configure firewall rules as needed for spoke traffic
 
 ## Documentation
 
