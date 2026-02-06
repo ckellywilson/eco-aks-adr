@@ -1,0 +1,85 @@
+# Example Application with Ingress Using Internal NGINX Controller
+# This demonstrates how to expose an application through the internal NGINX ingress controller.
+#
+# Deploy after applying nginx-internal-controller.yaml:
+#   kubectl apply -f example-ingress.yaml
+#
+# Access from jump box or hub VNet:
+#   curl http://10.1.0.50/hello  # HTTP
+#   curl https://10.1.0.50/hello  # HTTPS (requires TLS cert configuration)
+---
+# Example application deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-app
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: hello
+  template:
+    metadata:
+      labels:
+        app: hello
+    spec:
+      containers:
+      - name: app
+        image: mcr.microsoft.com/azuredocs/aks-helloworld:v1
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+---
+# Service for the application
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-service
+  namespace: default
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+  selector:
+    app: hello
+---
+# Ingress resource using the internal NGINX controller
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hello-ingress
+  namespace: default
+  annotations:
+    # Optional: Configure NGINX-specific settings
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"  # Set to "true" for HTTPS only
+spec:
+  # Use the internal NGINX ingress class
+  ingressClassName: nginx-internal
+  
+  rules:
+  # Route traffic based on path
+  - http:
+      paths:
+      - path: /hello
+        pathType: Prefix
+        backend:
+          service:
+            name: hello-service
+            port:
+              number: 80
+  
+  # Optional: Configure TLS (requires certificate secret)
+  # tls:
+  # - hosts:
+  #   - myapp.internal.contoso.com
+  #   secretName: tls-secret

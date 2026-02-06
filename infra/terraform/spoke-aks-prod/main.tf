@@ -35,8 +35,8 @@ module "spoke_vnet" {
 
   # Point to hub DNS Resolver inbound endpoint
   dns_servers = try(
-    [local.hub_outputs.dns_resolver_inbound_ip],
-    var.custom_dns_servers,
+    { dns_servers = [local.hub_outputs.dns_resolver_inbound_ip] },
+    var.custom_dns_servers != null ? { dns_servers = var.custom_dns_servers } : null,
     null
   )
 
@@ -57,11 +57,11 @@ resource "azurerm_route_table" "spoke" {
 
 # Default route to hub firewall (0.0.0.0/0 -> Firewall Private IP)
 resource "azurerm_route" "default_route" {
-  name                = "route-default-to-firewall"
-  resource_group_name = azurerm_resource_group.aks_spoke.name
-  route_table_name    = azurerm_route_table.spoke.name
-  address_prefix      = "0.0.0.0/0"
-  next_hop_type       = "VirtualAppliance"
+  name                   = "route-default-to-firewall"
+  resource_group_name    = azurerm_resource_group.aks_spoke.name
+  route_table_name       = azurerm_route_table.spoke.name
+  address_prefix         = "0.0.0.0/0"
+  next_hop_type          = "VirtualAppliance"
   next_hop_in_ip_address = local.hub_outputs.firewall_private_ip
 }
 
@@ -87,6 +87,58 @@ resource "azurerm_network_security_group" "aks_nodes" {
     destination_port_range     = "*"
     source_address_prefix      = "10.1.0.0/22"
     destination_address_prefix = "10.1.0.0/22"
+  }
+
+  security_rule {
+    name                       = "AllowHttpFromHub"
+    priority                   = 110
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "80"
+    source_address_prefix      = "10.0.0.0/16"
+    destination_address_prefix = "10.1.0.50"
+    description                = "Allow HTTP traffic from hub VNet to NGINX ingress internal LB"
+  }
+
+  security_rule {
+    name                       = "AllowHttpsFromHub"
+    priority                   = 120
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "443"
+    source_address_prefix      = "10.0.0.0/16"
+    destination_address_prefix = "10.1.0.50"
+    description                = "Allow HTTPS traffic from hub VNet to NGINX ingress internal LB"
+  }
+
+  security_rule {
+    name                       = "AllowHttpFromSpoke"
+    priority                   = 130
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "80"
+    source_address_prefix      = "10.1.0.0/16"
+    destination_address_prefix = "10.1.0.50"
+    description                = "Allow HTTP traffic from spoke VNet to NGINX ingress internal LB"
+  }
+
+  security_rule {
+    name                       = "AllowHttpsFromSpoke"
+    priority                   = 140
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "443"
+    source_address_prefix      = "10.1.0.0/16"
+    destination_address_prefix = "10.1.0.50"
+    description                = "Allow HTTPS traffic from spoke VNet to NGINX ingress internal LB"
   }
 
   security_rule {
@@ -116,7 +168,7 @@ resource "azurerm_subnet_network_security_group_association" "aks_nodes" {
 # AKS Cluster with Azure Verified Module
 module "aks_cluster" {
   source  = "Azure/avm-res-containerservice-managedcluster/azurerm"
-  version = "~> 0.3.0"
+  version = "~> 0.4" # Updated to use latest stable version with ingress_profile support
 
   name      = var.aks_cluster_name
   location  = var.location
@@ -209,6 +261,14 @@ module "aks_cluster" {
     }
   } : null
 
+  # Ingress profile with Web App Routing addon (Azure-managed NGINX ingress controller)
+  ingress_profile = var.enable_web_app_routing ? {
+    web_app_routing = {
+      enabled               = true
+      dns_zone_resource_ids = var.web_app_routing_dns_zone_ids
+    }
+  } : null
+
   # Additional agent pools
   agent_pools = {
     user = {
@@ -251,14 +311,14 @@ module "acr" {
   sku = "Premium" # Required for private endpoints
 
   # Private endpoint configuration
-  private_endpoints = {
+  private_endpoints = length(local.hub_outputs.private_dns_zone_ids) > 0 ? {
     acr_private_endpoint = {
       name                            = "pe-acr-${var.environment}-${local.location_code}"
       subnet_resource_id              = module.spoke_vnet.subnets["management"].resource_id
       private_dns_zone_resource_ids   = [local.hub_outputs.private_dns_zone_ids["privatelink.azurecr.io"]]
       private_service_connection_name = "psc-acr-${var.environment}-${local.location_code}"
     }
-  }
+  } : {}
 
   # Grant AKS kubelet identity pull access
   role_assignments = {
@@ -308,14 +368,14 @@ module "key_vault" {
   }
 
   # Private endpoint configuration
-  private_endpoints = {
+  private_endpoints = length(local.hub_outputs.private_dns_zone_ids) > 0 ? {
     kv_private_endpoint = {
       name                            = "pe-kv-${var.environment}-${local.location_code}"
       subnet_resource_id              = module.spoke_vnet.subnets["management"].resource_id
       private_dns_zone_resource_ids   = [local.hub_outputs.private_dns_zone_ids["privatelink.vaultcore.azure.net"]]
       private_service_connection_name = "psc-kv-${var.environment}-${local.location_code}"
     }
-  }
+  } : {}
 
   # Grant AKS control plane identity access
   role_assignments = {
@@ -433,8 +493,8 @@ resource "azurerm_linux_virtual_machine" "spoke_jumpbox" {
     K9S_CHECKSUM="2e014bb2bc8b87661b2c333c97ba0a8c581c3bc1cfa3d0c7815e5385c914d06e"
     
     cd /tmp
-    wget -q "https://github.com/derailed/k9s/releases/download/${K9S_VERSION}/k9s_Linux_amd64.tar.gz"
-    echo "$K9S_CHECKSUM  k9s_Linux_amd64.tar.gz" | sha256sum -c -
+    wget -q "https://github.com/derailed/k9s/releases/download/$${K9S_VERSION}/k9s_Linux_amd64.tar.gz"
+    echo "$${K9S_CHECKSUM}  k9s_Linux_amd64.tar.gz" | sha256sum -c -
     tar -xzf k9s_Linux_amd64.tar.gz
     mv k9s /usr/local/bin/
     chmod +x /usr/local/bin/k9s
@@ -468,11 +528,15 @@ resource "azurerm_role_assignment" "jumpbox_aks_user" {
 # ===========================
 
 resource "azurerm_monitor_diagnostic_setting" "aks" {
-  count = try(local.hub_outputs.log_analytics_workspace_id, null) != null ? 1 : 0
+  count = local.hub_outputs.log_analytics_workspace_id != null ? 1 : 0
 
-  name                       = "diag-aks-${var.environment}-${local.location_code}"
-  target_resource_id         = module.aks_cluster.resource_id
-  log_analytics_workspace_id = local.hub_outputs.log_analytics_workspace_id
+  name               = "diag-aks-${var.environment}-${local.location_code}"
+  target_resource_id = module.aks_cluster.resource_id
+  # Use coalesce to provide fallback (won't be used due to count, but satisfies validation)
+  log_analytics_workspace_id = coalesce(
+    local.hub_outputs.log_analytics_workspace_id,
+    try(data.azurerm_log_analytics_workspace.hub[0].id, null)
+  )
 
   enabled_log {
     category = "kube-apiserver"

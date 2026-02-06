@@ -1,0 +1,38 @@
+# NGINX Ingress Controller Configuration - Internal Load Balancer
+# This manifest configures the Azure-managed NGINX ingress controller to use
+# an internal Azure Load Balancer with a static private IP address.
+#
+# Prerequisites:
+# - Web App Routing add-on must be enabled on the AKS cluster
+# - Static IP address (10.1.0.50) must be within the AKS nodes subnet range (10.1.0.0/22)
+#
+# Apply this manifest after cluster deployment:
+#   kubectl apply -f nginx-internal-controller.yaml
+#
+# Verify the controller was created:
+#   kubectl get nginxingresscontroller
+#   kubectl get svc -n app-routing-system
+apiVersion: approuting.kubernetes.azure.com/v1alpha1
+kind: NginxIngressController
+metadata:
+  name: nginx-internal
+spec:
+  # Ingress class name that applications will reference in their Ingress resources
+  ingressClassName: nginx-internal
+  
+  # Prefix for the NGINX controller pod names
+  controllerNamePrefix: nginx-internal
+  
+  # Load balancer annotations to configure internal LB with static IP
+  loadBalancerAnnotations:
+    # Use internal load balancer (no public IP)
+    service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+    
+    # Assign static private IP from AKS nodes subnet (10.1.0.0/22)
+    service.beta.kubernetes.io/azure-load-balancer-internal-subnet: "aks-nodes"
+    service.beta.kubernetes.io/azure-pip-name: ""  # No public IP
+    
+  # Optional: Specify resource limits for the NGINX controller pods
+  # scaling:
+  #   minReplicas: 2
+  #   maxReplicas: 10
