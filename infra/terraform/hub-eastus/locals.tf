@@ -33,10 +33,6 @@ locals {
       name             = "management"
       address_prefixes = ["10.0.4.0/24"]
     }
-    AppGatewaySubnet = {
-      name             = "AppGatewaySubnet"
-      address_prefixes = ["10.0.5.0/26"]
-    }
     dns_resolver_inbound = {
       name             = "dns-resolver-inbound"
       address_prefixes = ["10.0.6.0/28"]
