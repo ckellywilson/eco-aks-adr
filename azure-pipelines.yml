@@ -36,6 +36,7 @@ stages:
             inputs:
               command: 'init'
               workingDirectory: 'infra/terraform/hub-eastus'
+              backendServiceArm: 'azure-hub-prod'
               backendAzureRmResourceGroupName: 'rg-terraform-state-dev'
               backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
               backendAzureRmContainerName: 'terraform-state-dev'
@@ -64,6 +65,7 @@ stages:
             inputs:
               command: 'init'
               workingDirectory: 'infra/terraform/spoke-aks-prod'
+              backendServiceArm: 'azure-hub-prod'
               backendAzureRmResourceGroupName: 'rg-terraform-state-dev'
               backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
               backendAzureRmContainerName: 'terraform-state-dev'
@@ -97,6 +99,7 @@ stages:
             inputs:
               command: 'init'
               workingDirectory: 'infra/terraform/hub-eastus'
+              backendServiceArm: 'azure-hub-prod'
               backendAzureRmResourceGroupName: 'rg-terraform-state-dev'
               backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
               backendAzureRmContainerName: 'terraform-state-dev'
@@ -196,6 +199,7 @@ stages:
             inputs:
               command: 'init'
               workingDirectory: 'infra/terraform/spoke-aks-prod'
+              backendServiceArm: 'azure-hub-prod'
               backendAzureRmResourceGroupName: 'rg-terraform-state-dev'
               backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
               backendAzureRmContainerName: 'terraform-state-dev'
