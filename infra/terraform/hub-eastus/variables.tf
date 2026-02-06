@@ -24,7 +24,7 @@ variable "location_code" {
 variable "resource_group_name" {
   description = "Name of the hub resource group"
   type        = string
-  default     = "rg-hub-eus2-prod"
+  default     = "rg-hub-eus2-dev"
 }
 
 variable "hub_vnet_address_space" {
