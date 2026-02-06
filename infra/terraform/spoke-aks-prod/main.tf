@@ -89,6 +89,10 @@ resource "azurerm_network_security_group" "aks_nodes" {
     destination_address_prefix = "10.1.0.0/22"
   }
 
+  # NSG rules target the load balancer frontend IP (10.1.0.50) rather than the full subnet.
+  # This is the Azure Load Balancer standard pattern: traffic arrives at the frontend IP,
+  # and Azure LB handles distribution to backend pods across nodes. The destination IP
+  # represents the entry point for ingress traffic, not the backend pod IPs.
   security_rule {
     name                       = "AllowHttpFromHub"
     priority                   = 110
@@ -115,6 +119,9 @@ resource "azurerm_network_security_group" "aks_nodes" {
     description                = "Allow HTTPS traffic from hub VNet to NGINX ingress internal LB"
   }
 
+  # These spoke-level rules enable access from non-AKS subnets within the spoke VNet
+  # (e.g., management subnet at 10.1.5.0/24 where jumpbox resides). The AllowIntraSubnet
+  # rule (priority 100) already permits traffic within the AKS nodes subnet (10.1.0.0/22).
   security_rule {
     name                       = "AllowHttpFromSpoke"
     priority                   = 130
@@ -168,7 +175,9 @@ resource "azurerm_subnet_network_security_group_association" "aks_nodes" {
 # AKS Cluster with Azure Verified Module
 module "aks_cluster" {
   source  = "Azure/avm-res-containerservice-managedcluster/azurerm"
-  version = "~> 0.4" # Updated to use latest stable version with ingress_profile support
+  # Tested with v0.4.2. Using ~> 0.4 to allow patch updates (0.4.x) for bug fixes
+  # while maintaining compatibility with ingress_profile support introduced in 0.4.x
+  version = "~> 0.4"
 
   name      = var.aks_cluster_name
   location  = var.location
@@ -262,6 +271,12 @@ module "aks_cluster" {
   } : null
 
   # Ingress profile with Web App Routing addon (Azure-managed NGINX ingress controller)
+  # Note: This enables the add-on at the infrastructure level. Kubernetes manifests
+  # (NginxIngressController CRD) must be applied post-deployment to configure the
+  # internal load balancer. This two-step approach keeps infrastructure provisioning
+  # separate from K8s configuration and avoids Terraform's kubernetes provider
+  # dependency on cluster credentials. See manifests/nginx-internal-controller.yaml
+  # and README.md for post-deployment steps.
   ingress_profile = var.enable_web_app_routing ? {
     web_app_routing = {
       enabled               = true
