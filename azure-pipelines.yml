@@ -60,7 +60,7 @@ stages:
             inputs:
               command: 'init'
               workingDirectory: 'infra/terraform/spoke-aks-prod'
-              backendServiceArm: 'azure-terraform-connection'
+              backendServiceArm: 'azure-hub-prod'
               backendAzureRmResourceGroupName: 'rg-terraform-state-dev'
               backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
               backendAzureRmContainerName: 'terraform-state-dev'
@@ -173,7 +173,7 @@ stages:
             inputs:
               command: 'init'
               workingDirectory: 'infra/terraform/spoke-aks-prod'
-              backendServiceArm: 'azure-terraform-connection'
+              backendServiceArm: 'azure-hub-prod'
               backendAzureRmResourceGroupName: 'rg-terraform-state-dev'
               backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
               backendAzureRmContainerName: 'terraform-state-dev'
@@ -184,7 +184,7 @@ stages:
               command: 'plan'
               workingDirectory: 'infra/terraform/spoke-aks-prod'
               commandOptions: '-var-file=prod.tfvars -var="subscription_id=$(AZURE_SUBSCRIPTION_ID)" -out=tfplan.prod'
-              environmentServiceNameAzureRM: 'azure-terraform-connection'
+              environmentServiceNameAzureRM: 'azure-hub-prod'
 
           - task: PublishBuildArtifacts@1
             inputs:
@@ -220,7 +220,7 @@ stages:
                   inputs:
                     command: 'init'
                     workingDirectory: 'infra/terraform/spoke-aks-prod'
-                    backendServiceArm: 'azure-terraform-connection'
+                    backendServiceArm: 'azure-hub-prod'
                     backendAzureRmResourceGroupName: 'rg-terraform-state-dev'
                     backendAzureRmStorageAccountName: 'sttfstatedevd3120d7a'
                     backendAzureRmContainerName: 'terraform-state-dev'
@@ -231,4 +231,4 @@ stages:
                     command: 'apply'
                     workingDirectory: 'infra/terraform/spoke-aks-prod'
                     commandOptions: '$(System.DefaultWorkingDirectory)/spoke-tfplan/tfplan.prod'
-                    environmentServiceNameAzureRM: 'azure-terraform-connection'
+                    environmentServiceNameAzureRM: 'azure-hub-prod'
