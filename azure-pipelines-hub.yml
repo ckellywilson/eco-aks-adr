@@ -14,7 +14,6 @@ trigger:
       - azure-pipelines-hub.yml
 
 variables:
-  terraform_version: 1.10.5
   # Set these in ADO Pipeline Variables:
   # - AZURE_SUBSCRIPTION_ID: Your subscription ID
   # - AZURE_TENANT_ID: Your Azure tenant ID
@@ -65,7 +64,7 @@ stages:
 
           - task: TerraformInstaller@0
             inputs:
-              terraformVersion: $(terraform_version)
+              terraformVersion: 1.10.5
 
           - task: TerraformTaskV4@4
             inputs:
@@ -119,7 +118,7 @@ stages:
 
                 - task: TerraformInstaller@0
                   inputs:
-                    terraformVersion: $(terraform_version)
+                    terraformVersion: 1.10.5
 
                 - task: DownloadBuildArtifacts@1
                   inputs:
