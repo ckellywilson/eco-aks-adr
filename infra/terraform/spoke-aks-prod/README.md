@@ -355,13 +355,13 @@ Then reapply Terraform and update the NginxIngressController manifest.
 
 #### DNS Integration (Optional)
 
-To enable automatic DNS record management:
+DNS integration is not configured by this Terraform module. To use DNS names for applications exposed via the internal Nginx ingress:
 
-1. Create Azure Private DNS Zone: `kubectl apply -f nginx-internal-controller.yaml
+- Create or use an existing **Azure Private DNS Zone** and link it to both the hub and spoke VNets.
+- Create **A records** in that zone pointing to the internal load balancer IP (`nginx_internal_lb_ip`, default `10.1.0.50`).
+- Update your application ingress resources to use hostnames that match the DNS records you created.
 
-# Check status
-kubectl get nginxingresscontroller nginx-internal -oyaml
-```
+This keeps DNS management separate from the cluster deployment and avoids implicit dependencies in this initial implementation.
 
 ### Common Issues
 
