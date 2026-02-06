@@ -14,33 +14,22 @@ parameters:
     default: 'backend-prod.tfbackend'
 
 steps:
-  - task: Bash@3
+  - bash: |
+      set -e
+      
+      echo "##[section]Installing Terraform..."
+      terraform version
+      
+      echo "##[section]Initializing Terraform with OIDC authentication..."
+      terraform init \
+        -backend-config="${{ parameters.backendFile }}" \
+        -reconfigure \
+        -upgrade
+      
+      echo "##[section]Terraform initialized successfully"
     displayName: 'Terraform Init with OIDC'
-    inputs:
-      targetType: 'inline'
-      workingDirectory: '${{ parameters.workingDirectory }}'
-      script: |
-        set -e
-        
-        # Clear any Azure CLI environment variables that conflict with OIDC
-        unset AZURE_SUBSCRIPTION_ID
-        unset AZURE_TENANT_ID
-        unset AZURE_CLIENT_ID
-        unset AZURE_CLIENT_SECRET
-        unset AZURE_USERNAME
-        unset AZURE_PASSWORD
-        
-        echo "##[section]Installing Terraform..."
-        terraform version
-        
-        echo "##[section]Initializing Terraform with OIDC authentication..."
-        terraform init \
-          -backend-config="${{ parameters.backendFile }}" \
-          -reconfigure \
-          -upgrade
-        
-        echo "##[section]Terraform initialized successfully"
+    workingDirectory: '${{ parameters.workingDirectory }}'
     env:
-      ARM_USE_OIDC: 'true'
+      ARM_USE_OIDC: true
       ARM_CLIENT_ID: $(AZURE_CLIENT_ID)
       ARM_TENANT_ID: $(AZURE_TENANT_ID)
