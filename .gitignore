@@ -7,7 +7,8 @@
 # ============================================================================
 # Generated Terraform Code (Users generate this in their own repos)
 # ============================================================================
-tfplan
+**tfplan
+**tfplan*
 # Allow Terraform files in infra/ directory
 *.tf
 !infra/**/*.tf
