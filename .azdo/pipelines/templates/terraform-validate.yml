@@ -1,55 +1,67 @@
-# Terraform Validate Template
-# Performs Tier 1 & Tier 2 validation checks
-
 parameters:
-  - name: workingDirectory
+  - name: terraformPath
     type: string
-    displayName: 'Terraform Working Directory'
+    displayName: 'Terraform working directory'
+  - name: serviceConnection
+    type: string
+    displayName: 'Azure DevOps Service Connection name'
 
 steps:
-  - task: Bash@3
-    displayName: 'Terraform Format Check'
+  - task: TerraformInstaller@0
+    displayName: 'Install Terraform'
     inputs:
-      targetType: 'inline'
-      workingDirectory: '${{ parameters.workingDirectory }}'
-      script: |
-        set -e
-        
-        echo "##[section]Running terraform fmt -check -recursive..."
-        if ! terraform fmt -check -recursive; then
-          echo "##vso[task.logissue type=error]Terraform formatting check failed. Run 'terraform fmt -recursive' to fix."
+      terraformVersion: 'latest'
+
+  - task: AzureCLI@2
+    displayName: 'Run Terraform Format Check'
+    inputs:
+      azureSubscription: ${{ parameters.serviceConnection }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        cd "${{ parameters.terraformPath }}"
+        echo "🔍 Running Terraform Format Check..."
+        terraform fmt -check -recursive
+        if [ $? -eq 0 ]; then
+          echo "✅ Terraform format is valid"
+        else
+          echo "❌ Terraform files need formatting. Run: terraform fmt -recursive"
           exit 1
         fi
-        
-        echo "##[section]Format check passed"
 
-  - task: Bash@3
-    displayName: 'Terraform Validate'
+  - task: AzureCLI@2
+    displayName: 'Run Terraform Validate'
     inputs:
-      targetType: 'inline'
-      workingDirectory: '${{ parameters.workingDirectory }}'
-      script: |
-        set -e
-        
-        echo "##[section]Running terraform validate..."
+      azureSubscription: ${{ parameters.serviceConnection }}
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        cd "${{ parameters.terraformPath }}"
+        echo "🔍 Running Terraform Validate..."
+        terraform init -backend=false -input=false
         terraform validate
-        
-        echo "##[section]Validation passed"
+        if [ $? -eq 0 ]; then
+          echo "✅ Terraform configuration is valid"
+        else
+          echo "❌ Terraform validation failed"
+          exit 1
+        fi
 
-  - task: Bash@3
-    displayName: 'Security Scan with tfsec (if available)'
+  - task: bash@3
+    displayName: 'Run TFSec Security Scan'
     inputs:
       targetType: 'inline'
-      workingDirectory: '${{ parameters.workingDirectory }}'
       script: |
-        set -e
-        
-        echo "##[section]Checking for tfsec..."
+        cd "${{ parameters.terraformPath }}"
+        echo "🔍 Running TFSec Security Scan..."
         if command -v tfsec &> /dev/null; then
-          echo "##[section]Running tfsec security scan..."
-          tfsec . --minimum-severity MEDIUM --format default
-          echo "##[section]Security scan completed"
+          tfsec . --minimum-severity MEDIUM --format sarif > /tmp/tfsec.sarif 2>&1 || {
+            echo "⚠️  TFSec found issues with medium or higher severity"
+            cat /tmp/tfsec.sarif
+            exit 1
+          }
+          echo "✅ TFSec scan completed with no violations"
         else
-          echo "##[warning]tfsec not found, skipping security scan. Install tfsec for enhanced security validation."
+          echo "⚠️  TFSec not installed, skipping security scan"
         fi
     continueOnError: false

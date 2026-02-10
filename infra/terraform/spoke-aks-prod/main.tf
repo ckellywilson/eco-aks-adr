@@ -22,6 +22,41 @@ resource "azurerm_user_assigned_identity" "aks_kubelet" {
   tags = local.common_tags
 }
 
+# Grant control plane identity "Managed Identity Operator" role on kubelet identity
+resource "azurerm_role_assignment" "control_plane_to_kubelet" {
+  scope                = azurerm_user_assigned_identity.aks_kubelet.id
+  role_definition_name = "Managed Identity Operator"
+  principal_id         = azurerm_user_assigned_identity.aks_control_plane.principal_id
+}
+
+# Grant control plane identity "Network Contributor" role on spoke VNet
+# Required for AKS to manage network resources (load balancers, NICs, etc.)
+resource "azurerm_role_assignment" "control_plane_to_vnet" {
+  scope                = module.spoke_vnet.resource_id
+  role_definition_name = "Network Contributor"
+  principal_id         = azurerm_user_assigned_identity.aks_control_plane.principal_id
+}
+
+# Grant control plane identity "Private DNS Zone Contributor" role on AKS private DNS zone
+# Required for BYOD (Bring Your Own DNS) pattern - allows AKS to register API server A records
+resource "azurerm_role_assignment" "control_plane_to_private_dns_zone" {
+  scope                = local.hub_outputs.private_dns_zone_ids["privatelink.${var.location}.azmk8s.io"]
+  role_definition_name = "Private DNS Zone Contributor"
+  principal_id         = azurerm_user_assigned_identity.aks_control_plane.principal_id
+}
+
+# Wait for role assignments to propagate in Azure AD
+# Increased to 90s to ensure Private DNS Zone Contributor role fully propagates
+# before AKS attempts to register private endpoint A records
+resource "time_sleep" "wait_for_rbac" {
+  depends_on = [
+    azurerm_role_assignment.control_plane_to_kubelet,
+    azurerm_role_assignment.control_plane_to_vnet,
+    azurerm_role_assignment.control_plane_to_private_dns_zone
+  ]
+  create_duration = "90s"
+}
+
 # Spoke VNet with subnets
 module "spoke_vnet" {
   source  = "Azure/avm-res-network-virtualnetwork/azurerm"
@@ -46,6 +81,23 @@ module "spoke_vnet" {
   tags             = local.common_tags
 }
 
+# Link spoke VNet to AKS private DNS zone
+# REQUIRED for hub-spoke topology with custom DNS pointing to hub's DNS Resolver.
+# Empirical testing confirms that BOTH hub and spoke VNets must be linked to the
+# private DNS zone when the spoke uses custom DNS pointing to the hub's DNS Resolver.
+# This ensures proper DNS resolution during node bootstrap when nodes query the hub's
+# DNS resolver inbound endpoint.
+# Reference: https://learn.microsoft.com/en-us/azure/aks/private-clusters#hub-and-spoke-with-custom-dns-for-private-aks-clusters
+resource "azurerm_private_dns_zone_virtual_network_link" "aks_private_dns_spoke_link" {
+  name                  = "link-privatelink.${var.location}.azmk8s.io-spoke"
+  resource_group_name   = var.hub_resource_group_name
+  private_dns_zone_name = "privatelink.${var.location}.azmk8s.io"
+  virtual_network_id    = module.spoke_vnet.resource_id
+  registration_enabled  = false
+
+  tags = local.common_tags
+}
+
 # Route table for spoke with UDR to hub firewall
 resource "azurerm_route_table" "spoke" {
   name                = "rt-spoke-${var.environment}-${local.location_code}"
@@ -56,21 +108,13 @@ resource "azurerm_route_table" "spoke" {
 }
 
 # Default route to hub firewall (0.0.0.0/0 -> Firewall Private IP)
-# Only create if firewall_private_ip is available from hub outputs
 resource "azurerm_route" "default_route" {
-  count                  = try(local.hub_outputs.firewall_private_ip, null) != null ? 1 : 0
   name                   = "route-default-to-firewall"
   resource_group_name    = azurerm_resource_group.aks_spoke.name
   route_table_name       = azurerm_route_table.spoke.name
   address_prefix         = "0.0.0.0/0"
   next_hop_type          = "VirtualAppliance"
-  next_hop_in_ip_address = try(local.hub_outputs.firewall_private_ip, "")
-}
-
-# Associate route table with AKS node pools subnet
-resource "azurerm_subnet_route_table_association" "aks_nodes" {
-  subnet_id      = module.spoke_vnet.subnets["aks_nodes"].resource_id
-  route_table_id = azurerm_route_table.spoke.id
+  next_hop_in_ip_address = local.firewall_private_ip
 }
 
 # Network Security Group for AKS nodes
@@ -165,12 +209,6 @@ resource "azurerm_network_security_group" "aks_nodes" {
   tags = local.common_tags
 }
 
-# Associate NSG with AKS node pools subnet
-resource "azurerm_subnet_network_security_group_association" "aks_nodes" {
-  subnet_id                 = module.spoke_vnet.subnets["aks_nodes"].resource_id
-  network_security_group_id = azurerm_network_security_group.aks_nodes.id
-}
-
 # VNet Peering is configured from hub side (hub-to-spoke and spoke-to-hub)
 # See hub-eastus/main.tf for peering resources
 
@@ -223,9 +261,12 @@ module "aks_cluster" {
   }
 
   # API Server access profile for private cluster
+  # CRITICAL FIX: Property name is "private_dns_zone" NOT "private_dns_zone_id"
+  # The AVM module variable is named "private_dns_zone" (without _id suffix)
   api_server_access_profile = var.enable_private_cluster ? {
     enable_private_cluster             = true
     enable_private_cluster_public_fqdn = false
+    private_dns_zone                   = local.hub_outputs.private_dns_zone_ids["privatelink.${var.location}.azmk8s.io"]
   } : null
 
   # Managed identities
@@ -238,9 +279,7 @@ module "aks_cluster" {
   # Kubelet identity profile
   identity_profile = {
     kubeletidentity = {
-      user_assigned_identity_id = azurerm_user_assigned_identity.aks_kubelet.id
-      client_id                 = azurerm_user_assigned_identity.aks_kubelet.client_id
-      object_id                 = azurerm_user_assigned_identity.aks_kubelet.principal_id
+      resource_id = azurerm_user_assigned_identity.aks_kubelet.id
     }
   }
 
@@ -305,8 +344,7 @@ module "aks_cluster" {
   tags             = local.common_tags
 
   depends_on = [
-    azurerm_subnet_route_table_association.aks_nodes,
-    azurerm_subnet_network_security_group_association.aks_nodes
+    time_sleep.wait_for_rbac
   ]
 }
 

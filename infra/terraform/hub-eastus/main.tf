@@ -225,6 +225,33 @@ resource "azurerm_private_dns_resolver_forwarding_rule" "local" {
   }
 }
 
+# DNS Forwarding Rule for AKS Private DNS Zone
+# NOTE: This forwarding rule is NOT needed because:
+# 1. The AKS private DNS zone (privatelink.eastus2.azmk8s.io) is linked to the hub VNet
+# 2. The DNS resolver can directly resolve private DNS zones linked to its VNet
+# 3. Azure doesn't allow forwarding to 168.63.129.16 in forwarding rules
+# 4. The ruleset VNET link (below) enables the resolver to process queries and resolve
+#    private DNS zones without explicit forwarding rules
+# Reference: https://learn.microsoft.com/en-us/azure/dns/private-resolver-endpoints-rulesets#rules
+#
+# Previous incorrect configuration (removed):
+# resource "azurerm_private_dns_resolver_forwarding_rule" "aks_private_zone" {
+#   domain_name = "privatelink.eastus2.azmk8s.io."
+#   target_dns_servers { ip_address = "168.63.129.16" }  # ❌ Not allowed
+# }
+
+# Link DNS Forwarding Ruleset to Hub VNet
+# Required for centralized DNS architecture: when spoke VNets use the hub's inbound endpoint
+# as custom DNS, the ruleset must be linked to the hub VNet to apply forwarding rules to
+# incoming queries from those spokes.
+# Reference: https://learn.microsoft.com/en-us/azure/dns/private-resolver-endpoints-rulesets#inbound-endpoints-as-custom-dns
+resource "azurerm_private_dns_resolver_virtual_network_link" "hub_vnet_link" {
+  count                     = var.deploy_dns_resolver ? 1 : 0
+  name                      = "link-hub-vnet-to-ruleset-${var.environment}-${local.location_code}"
+  dns_forwarding_ruleset_id = azurerm_private_dns_resolver_dns_forwarding_ruleset.hub[0].id
+  virtual_network_id        = module.hub_vnet.resource_id
+}
+
 # Firewall Policy Rule Collection Group
 resource "azurerm_firewall_policy_rule_collection_group" "aks" {
   count              = var.deploy_firewall ? 1 : 0
@@ -295,6 +322,22 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks" {
       source_addresses  = local.allowed_source_addresses
       destination_fqdns = ["*.azurecr.io"]
     }
+
+    rule {
+      name = "ubuntu-package-repositories"
+      protocols {
+        type = "Http"
+        port = 80
+      }
+      source_addresses = local.allowed_source_addresses
+      destination_fqdns = [
+        "security.ubuntu.com",
+        "azure.archive.ubuntu.com",
+        "archive.ubuntu.com",
+        "changelogs.ubuntu.com",
+        "entropy.ubuntu.com"
+      ]
+    }
   }
 
   network_rule_collection {
@@ -314,7 +357,7 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks" {
       name                  = "ntp"
       protocols             = ["UDP"]
       source_addresses      = local.allowed_source_addresses
-      destination_addresses = ["ntp.ubuntu.com"]
+      destination_addresses = ["*"] # NTP servers worldwide
       destination_ports     = ["123"]
     }
 

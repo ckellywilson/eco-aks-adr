@@ -19,6 +19,12 @@ locals {
     aks_nodes = {
       name             = "aks-nodes"
       address_prefixes = ["10.1.0.0/22"]
+      route_table = {
+        id = azurerm_route_table.spoke.id
+      }
+      network_security_group = {
+        id = azurerm_network_security_group.aks_nodes.id
+      }
     }
     aks_system = {
       name             = "aks-system"

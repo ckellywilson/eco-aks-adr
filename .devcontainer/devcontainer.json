@@ -19,6 +19,9 @@
 			"version": "latest",
 			"tflint": "latest",
 			"terragrunt": "latest"
+		},
+		"ghcr.io/devcontainers/features/node:1": {
+			"version": "lts"
 		}
 	}
 

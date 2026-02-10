@@ -1,63 +1,64 @@
-# Terraform Plan Template
-# Generates and saves Terraform execution plan as artifact
-
 parameters:
+  - name: terraformPath
+    type: string
+    displayName: 'Terraform working directory'
+  - name: tfvarsFile
+    type: string
+    displayName: 'Terraform variables file'
+  - name: planFile
+    type: string
+    displayName: 'Output plan file name'
   - name: serviceConnection
     type: string
-    displayName: 'Azure Service Connection'
-  - name: workingDirectory
-    type: string
-    displayName: 'Terraform Working Directory'
-  - name: varFile
-    type: string
-    displayName: 'Terraform Variables File'
-    default: 'prod.tfvars'
-  - name: artifactName
-    type: string
-    displayName: 'Plan Artifact Name'
-    default: 'tfplan'
+    displayName: 'Azure DevOps Service Connection name'
 
 steps:
+  - task: TerraformInstaller@0
+    displayName: 'Install Terraform'
+    inputs:
+      terraformVersion: 'latest'
+
   - task: AzureCLI@2
     displayName: 'Terraform Plan'
     inputs:
-      azureSubscription: '${{ parameters.serviceConnection }}'
+      azureSubscription: ${{ parameters.serviceConnection }}
       scriptType: 'bash'
       scriptLocation: 'inlineScript'
-      workingDirectory: '${{ parameters.workingDirectory }}'
-      addSpnToEnvironment: true
       inlineScript: |
         set -e
+        cd "${{ parameters.terraformPath }}"
         
-        echo "##[section]Generating Terraform plan..."
-        
-        # Run terraform plan and save output
+        echo "📋 Generating Terraform plan..."
         terraform plan \
-          -var-file="${{ parameters.varFile }}" \
-          -var="subscription_id=$(subscription_id)" \
-          -var="admin_ssh_public_key=$(admin_ssh_public_key)" \
-          -out=tfplan \
-          -detailed-exitcode || EXIT_CODE=$?
+          -var-file="${{ parameters.tfvarsFile }}" \
+          -out=${{ parameters.planFile }} \
+          -input=false \
+          -detailed-exitcode || PLAN_EXIT=$?
         
-        # Check exit code
-        # 0 = No changes, 1 = Error, 2 = Changes present
-        if [ "${EXIT_CODE:-0}" -eq 1 ]; then
-          echo "##vso[task.logissue type=error]Terraform plan failed"
-          exit 1
-        elif [ "${EXIT_CODE:-0}" -eq 2 ]; then
-          echo "##[section]Changes detected in plan"
-        else
-          echo "##[section]No changes detected"
-        fi
-        
-        echo "##[section]Displaying human-readable plan..."
-        terraform show tfplan
-        
-        echo "##[section]Plan generation completed"
+        case "$PLAN_EXIT" in
+          0)
+            echo "ℹ️  No changes detected"
+            ;;
+          1)
+            echo "❌ Terraform plan encountered an error"
+            exit 1
+            ;;
+          2)
+            echo "📊 Changes detected - plan saved to ${{ parameters.planFile }}"
+            ;;
+          *)
+            echo "⚠️  Unknown exit code: $PLAN_EXIT"
+            ;;
+        esac
+    env:
+      TF_INPUT: false
+      TF_IN_AUTOMATION: true
+      ARM_USE_AZUREAD: true
 
-  - task: PublishPipelineArtifact@1
-    displayName: 'Publish Terraform Plan Artifact'
+  - task: PublishBuildArtifacts@1
+    condition: always()
     inputs:
-      targetPath: '${{ parameters.workingDirectory }}/tfplan'
-      artifactName: '${{ parameters.artifactName }}'
-      publishLocation: 'pipeline'
+      PathtoPublish: '${{ parameters.terraformPath }}/${{ parameters.planFile }}'
+      ArtifactName: 'terraform-plans'
+      publishLocation: 'Container'
+    displayName: 'Publish Terraform Plan'

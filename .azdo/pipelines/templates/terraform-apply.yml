@@ -1,45 +1,58 @@
-# Terraform Apply Template
-# Applies Terraform execution plan from artifact
-
 parameters:
+  - name: terraformPath
+    type: string
+    displayName: 'Terraform working directory'
+  - name: planFile
+    type: string
+    displayName: 'Terraform plan file'
   - name: serviceConnection
     type: string
-    displayName: 'Azure Service Connection'
-  - name: workingDirectory
-    type: string
-    displayName: 'Terraform Working Directory'
-  - name: artifactName
-    type: string
-    displayName: 'Plan Artifact Name'
-    default: 'tfplan'
+    displayName: 'Azure DevOps Service Connection name'
 
 steps:
-  - task: DownloadPipelineArtifact@2
-    displayName: 'Download Terraform Plan Artifact'
+  - task: TerraformInstaller@0
+    displayName: 'Install Terraform'
     inputs:
-      artifactName: '${{ parameters.artifactName }}'
-      targetPath: '${{ parameters.workingDirectory }}'
+      terraformVersion: 'latest'
 
   - task: AzureCLI@2
     displayName: 'Terraform Apply'
     inputs:
-      azureSubscription: '${{ parameters.serviceConnection }}'
+      azureSubscription: ${{ parameters.serviceConnection }}
       scriptType: 'bash'
       scriptLocation: 'inlineScript'
-      workingDirectory: '${{ parameters.workingDirectory }}'
-      addSpnToEnvironment: true
       inlineScript: |
         set -e
+        cd "${{ parameters.terraformPath }}"
         
-        echo "##[section]Applying Terraform plan..."
-        
-        # Verify plan file exists
-        if [ ! -f "tfplan" ]; then
-          echo "##vso[task.logissue type=error]Plan file 'tfplan' not found"
+        if [ ! -f "${{ parameters.planFile }}" ]; then
+          echo "❌ Plan file not found: ${{ parameters.planFile }}"
           exit 1
         fi
         
-        # Apply the saved plan
-        terraform apply -auto-approve tfplan
+        echo "🚀 Applying Terraform configuration..."
+        terraform apply \
+          -input=false \
+          -auto-approve \
+          ${{ parameters.planFile }}
         
-        echo "##[section]Terraform apply completed successfully"
+        if [ $? -eq 0 ]; then
+          echo "✅ Terraform apply completed successfully"
+          terraform output -json > outputs.json 2>/dev/null || true
+        else
+          echo "❌ Terraform apply failed"
+          exit 1
+        fi
+    env:
+      TF_INPUT: false
+      TF_IN_AUTOMATION: true
+      ARM_USE_AZUREAD: true
+
+  - task: PublishBuildArtifacts@1
+    condition: always()
+    inputs:
+      PathtoPublish: '${{ parameters.terraformPath }}/outputs.json'
+      ArtifactName: 'terraform-outputs'
+      publishLocation: 'Container'
+    displayName: 'Publish Terraform Outputs'
+    continueOnError: true
