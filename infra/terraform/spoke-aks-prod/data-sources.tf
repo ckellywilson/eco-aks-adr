@@ -13,9 +13,18 @@ data "terraform_remote_state" "hub" {
     storage_account_name = "sttfstatedevd3120d7a"
     container_name       = "terraform-state-prod"
     key                  = "hub-eastus/terraform.tfstate"
+    use_azuread_auth     = true
   }
 }
 
+# Read Azure Firewall to get private IP address
+# (workaround for module output issue)
+data "azurerm_firewall" "hub" {
+  name                = "afw-hub-prod-eus2"
+  resource_group_name = var.hub_resource_group_name
+}
+
 locals {
-  hub_outputs = data.terraform_remote_state.hub.outputs
+  hub_outputs         = data.terraform_remote_state.hub.outputs
+  firewall_private_ip = data.azurerm_firewall.hub.ip_configuration[0].private_ip_address
 }
