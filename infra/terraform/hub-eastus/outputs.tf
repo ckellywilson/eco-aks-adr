@@ -35,7 +35,7 @@ output "firewall_id" {
 
 output "firewall_private_ip" {
   description = "Azure Firewall private IP address"
-  value       = try(module.firewall[0].firewall_private_ip, null)
+  value       = try(module.firewall[0].resource.ip_configurations[0].private_ip_address, try(module.firewall[0].firewall_private_ip, null))
 }
 
 output "firewall_public_ip" {
