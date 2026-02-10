@@ -1,7 +1,3 @@
-# Spoke AKS Infrastructure Deployment Pipeline
-# Deploys spoke-aks-prod infrastructure to Azure using Terraform
-# Depends on hub infrastructure being deployed first
-
 trigger:
   branches:
     include:
@@ -19,258 +15,102 @@ pr:
   paths:
     include:
       - infra/terraform/spoke-aks-prod/**
-      - .azdo/pipelines/spoke-deploy.yml
-      - .azdo/pipelines/templates/**
 
-parameters:
-  - name: action
-    displayName: 'Pipeline Action'
-    type: string
-    default: 'plan-apply'
-    values:
-      - 'plan-apply'
-      - 'destroy'
+pool:
+  vmImage: 'ubuntu-latest'
 
 variables:
-  - group: terraform-spoke-prod
-  - name: workingDirectory
-    value: '$(System.DefaultWorkingDirectory)/infra/terraform/spoke-aks-prod'
-  - name: serviceConnection
-    value: 'azure-spoke-prod'
-  - name: terraformVersion
-    value: '1.10.5'
-  - name: hubStateKey
-    value: 'hub-eastus/terraform.tfstate'
+  terraformVersion: '1.9'
+  terraformPath: '$(System.DefaultWorkingDirectory)/infra/terraform/spoke-aks-prod'
+  tfvarsFile: 'prod.tfvars'
+  planFile: 'tfplan.prod'
+  backendResourceGroup: 'rg-terraform-state'
+  backendStorageAccount: 'tfstate'
+  backendContainer: 'terraform'
+  azureServiceConnection: 'Azure-Terraform-Connection'
 
 stages:
-  # ============================================================
-  # VALIDATE STAGE - Runs on PR and main branch
-  # ============================================================
   - stage: Validate
-    displayName: 'Validate Terraform Configuration'
-    condition: eq('${{ parameters.action }}', 'plan-apply')
+    displayName: '🔍 Validate Terraform'
     jobs:
-      - job: ValidateJob
-        displayName: 'Run Terraform Validation'
-        pool:
-          vmImage: 'ubuntu-latest'
+      - job: ValidateConfig
+        displayName: 'Validate Spoke Configuration'
         steps:
-          - checkout: self
-
-          - task: TerraformInstaller@1
-            displayName: 'Install Terraform'
-            inputs:
-              terraformVersion: '$(terraformVersion)'
-
-          - template: templates/terraform-init.yml
-            parameters:
-              serviceConnection: '$(serviceConnection)'
-              workingDirectory: '$(workingDirectory)'
-              backendFile: '../hub-eastus/backend-prod.tfbackend'
-
           - template: templates/terraform-validate.yml
             parameters:
-              workingDirectory: '$(workingDirectory)'
+              terraformPath: $(terraformPath)
+              serviceConnection: $(azureServiceConnection)
 
-  # ============================================================
-  # HUB DEPENDENCY CHECK - Verify hub outputs exist
-  # ============================================================
-  - stage: CheckHubDependency
-    displayName: 'Verify Hub Infrastructure Exists'
+  - stage: Init
+    displayName: '⚙️  Initialize Terraform'
     dependsOn: Validate
-    condition: |
-      and(
-        succeeded(),
-        eq('${{ parameters.action }}', 'plan-apply')
-      )
+    condition: succeeded()
     jobs:
-      - job: CheckHub
-        displayName: 'Verify Hub State'
-        pool:
-          vmImage: 'ubuntu-latest'
+      - job: InitBackend
+        displayName: 'Initialize Terraform Backend'
         steps:
-          - checkout: self
-
-          - task: TerraformInstaller@1
-            displayName: 'Install Terraform'
-            inputs:
-              terraformVersion: '$(terraformVersion)'
-
-          - task: AzureCLI@2
-            displayName: 'Check Hub Remote State'
-            inputs:
-              azureSubscription: '$(serviceConnection)'
-              scriptType: 'bash'
-              scriptLocation: 'inlineScript'
-              addSpnToEnvironment: true
-              inlineScript: |
-                set -e
-                
-                echo "##[section]Checking if hub infrastructure is deployed..."
-                
-                # Read backend configuration from pipeline variables
-                STORAGE_ACCOUNT="$(terraformBackendStorageAccount)"
-                CONTAINER="$(terraformBackendContainerName)"
-                HUB_STATE_KEY="$(hubStateKey)"
-                
-                # Check if hub state file exists
-                echo "##[command]Checking for hub state file: $HUB_STATE_KEY"
-                
-                if az storage blob exists \
-                  --account-name "$STORAGE_ACCOUNT" \
-                  --container-name "$CONTAINER" \
-                  --name "$HUB_STATE_KEY" \
-                  --auth-mode login \
-                  --query "exists" -o tsv | grep -q "true"; then
-                  
-                  echo "##[section]✓ Hub state file found"
-                  echo "##[section]Hub infrastructure is deployed and ready"
-                else
-                  echo "##vso[task.logissue type=error]Hub state file not found!"
-                  echo "##vso[task.logissue type=error]Hub infrastructure must be deployed before spoke"
-                  echo "##vso[task.logissue type=error]Run hub-deploy.yml pipeline first"
-                  exit 1
-                fi
-
-  # ============================================================
-  # PLAN STAGE - Runs after hub dependency check
-  # ============================================================
-  - stage: Plan
-    displayName: 'Plan Terraform Changes'
-    dependsOn: CheckHubDependency
-    condition: |
-      and(
-        succeeded(),
-        eq('${{ parameters.action }}', 'plan-apply'),
-        or(
-          eq(variables['Build.SourceBranch'], 'refs/heads/main'),
-          eq(variables['Build.Reason'], 'PullRequest')
-        )
-      )
-    jobs:
-      - job: PlanJob
-        displayName: 'Generate Terraform Plan'
-        pool:
-          vmImage: 'ubuntu-latest'
-        steps:
-          - checkout: self
-
-          - task: TerraformInstaller@1
-            displayName: 'Install Terraform'
-            inputs:
-              terraformVersion: '$(terraformVersion)'
-
           - template: templates/terraform-init.yml
             parameters:
-              serviceConnection: '$(serviceConnection)'
-              workingDirectory: '$(workingDirectory)'
-              backendFile: 'backend-prod.tfbackend'
+              terraformPath: $(terraformPath)
+              backendResourceGroup: $(backendResourceGroup)
+              backendStorageAccount: $(backendStorageAccount)
+              backendContainer: $(backendContainer)
+              serviceConnection: $(azureServiceConnection)
+
+  - stage: Plan
+    displayName: '📋 Plan Infrastructure Changes'
+    dependsOn: Init
+    condition: succeeded()
+    jobs:
+      - job: GeneratePlan
+        displayName: 'Plan Spoke Infrastructure'
+        steps:
+          - template: templates/terraform-init.yml
+            parameters:
+              terraformPath: $(terraformPath)
+              backendResourceGroup: $(backendResourceGroup)
+              backendStorageAccount: $(backendStorageAccount)
+              backendContainer: $(backendContainer)
+              serviceConnection: $(azureServiceConnection)
 
           - template: templates/terraform-plan.yml
             parameters:
-              serviceConnection: '$(serviceConnection)'
-              workingDirectory: '$(workingDirectory)'
-              varFile: 'prod.tfvars'
-              artifactName: 'spoke-tfplan'
+              terraformPath: $(terraformPath)
+              tfvarsFile: $(tfvarsFile)
+              planFile: $(planFile)
+              serviceConnection: $(azureServiceConnection)
 
-  # ============================================================
-  # APPLY STAGE - Runs only on main branch with approval
-  # ============================================================
   - stage: Apply
-    displayName: 'Apply Terraform Changes'
+    displayName: '🚀 Apply Infrastructure Changes'
     dependsOn: Plan
-    condition: |
-      and(
-        succeeded(),
-        eq('${{ parameters.action }}', 'plan-apply'),
-        eq(variables['Build.SourceBranch'], 'refs/heads/main'),
-        ne(variables['Build.Reason'], 'PullRequest')
-      )
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
     jobs:
-      - deployment: ApplyDeployment
-        displayName: 'Deploy Spoke Infrastructure'
-        pool:
-          vmImage: 'ubuntu-latest'
-        environment: 'prod'
+      - deployment: ApplyInfra
+        displayName: 'Apply Spoke Infrastructure'
+        environment: 'Spoke-Production'
         strategy:
           runOnce:
             deploy:
               steps:
                 - checkout: self
 
-                - task: TerraformInstaller@1
-                  displayName: 'Install Terraform'
-                  inputs:
-                    terraformVersion: '$(terraformVersion)'
-
                 - template: templates/terraform-init.yml
                   parameters:
-                    serviceConnection: '$(serviceConnection)'
-                    workingDirectory: '$(workingDirectory)'
-                    backendFile: 'backend-prod.tfbackend'
+                    terraformPath: $(terraformPath)
+                    backendResourceGroup: $(backendResourceGroup)
+                    backendStorageAccount: $(backendStorageAccount)
+                    backendContainer: $(backendContainer)
+                    serviceConnection: $(azureServiceConnection)
+
+                - template: templates/terraform-plan.yml
+                  parameters:
+                    terraformPath: $(terraformPath)
+                    tfvarsFile: $(tfvarsFile)
+                    planFile: $(planFile)
+                    serviceConnection: $(azureServiceConnection)
 
                 - template: templates/terraform-apply.yml
                   parameters:
-                    serviceConnection: '$(serviceConnection)'
-                    workingDirectory: '$(workingDirectory)'
-                    artifactName: 'spoke-tfplan'
-
-  # ============================================================
-  # DESTROY STAGE - Manual trigger only with runtime parameter
-  # ============================================================
-  - stage: Destroy
-    displayName: 'Destroy Spoke Infrastructure'
-    dependsOn: []
-    condition: |
-      and(
-        eq('${{ parameters.action }}', 'destroy'),
-        eq(variables['Build.Reason'], 'Manual'),
-        eq(variables['Build.SourceBranch'], 'refs/heads/main')
-      )
-    jobs:
-      - deployment: DestroyDeployment
-        displayName: 'Destroy Spoke Infrastructure'
-        pool:
-          vmImage: 'ubuntu-latest'
-        environment: 'prod'
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - checkout: self
-
-                - task: TerraformInstaller@1
-                  displayName: 'Install Terraform'
-                  inputs:
-                    terraformVersion: '$(terraformVersion)'
-
-                - template: templates/terraform-init.yml
-                  parameters:
-                    serviceConnection: '$(serviceConnection)'
-                    workingDirectory: '$(workingDirectory)'
-                    # Requires infra/terraform/spoke-aks-prod/backend-prod.tfbackend to exist
-                    backendFile: 'backend-prod.tfbackend'
-
-                - task: AzureCLI@2
-                  displayName: 'Terraform Destroy'
-                  inputs:
-                    azureSubscription: '$(serviceConnection)'
-                    scriptType: 'bash'
-                    scriptLocation: 'inlineScript'
-                    workingDirectory: '$(workingDirectory)'
-                    addSpnToEnvironment: true
-                    inlineScript: |
-                      set -e
-                      
-                      echo "##[warning]=========================================="
-                      echo "##[warning]DESTROYING SPOKE INFRASTRUCTURE"
-                      echo "##[warning]This will DELETE all spoke resources including AKS!"
-                      echo "##[warning]=========================================="
-                      
-                      terraform destroy \
-                        -var-file="prod.tfvars" \
-                        -var="subscription_id=$(subscription_id)" \
-                        -var="admin_ssh_public_key=$(admin_ssh_public_key)" \
-                        -auto-approve
-                      
-                      echo "##[section]Spoke infrastructure destroyed"
+                    terraformPath: $(terraformPath)
+                    planFile: $(planFile)
+                    serviceConnection: $(azureServiceConnection)

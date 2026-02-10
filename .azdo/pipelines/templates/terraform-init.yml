@@ -1,38 +1,60 @@
-# Terraform Init Template
-# Initializes Terraform with Azure backend using OIDC authentication
-
 parameters:
+  - name: terraformPath
+    type: string
+    displayName: 'Terraform working directory'
+  - name: backendResourceGroup
+    type: string
+    displayName: 'Backend resource group name'
+  - name: backendStorageAccount
+    type: string
+    displayName: 'Backend storage account name'
+  - name: backendContainer
+    type: string
+    displayName: 'Backend storage container'
   - name: serviceConnection
     type: string
-    displayName: 'Azure Service Connection'
-  - name: workingDirectory
-    type: string
-    displayName: 'Terraform Working Directory'
-  - name: backendFile
-    type: string
-    displayName: 'Backend Configuration File'
-    default: 'backend-prod.tfbackend'
+    displayName: 'Azure DevOps Service Connection name'
 
 steps:
-  - task: AzureCLI@2
-    displayName: 'Terraform Init'
+  - task: TerraformInstaller@0
+    displayName: 'Install Terraform'
     inputs:
-      azureSubscription: '${{ parameters.serviceConnection }}'
+      terraformVersion: 'latest'
+
+  - task: AzureCLI@2
+    displayName: 'Verify Storage Account Access'
+    inputs:
+      azureSubscription: ${{ parameters.serviceConnection }}
       scriptType: 'bash'
       scriptLocation: 'inlineScript'
-      workingDirectory: '${{ parameters.workingDirectory }}'
-      addSpnToEnvironment: true
-      useClassicSubscriptionApi: false
       inlineScript: |
+        echo "📦 Verifying storage account access via RBAC..."
+        az storage account show \
+          --resource-group "${{ parameters.backendResourceGroup }}" \
+          --name "${{ parameters.backendStorageAccount }}" \
+          --query "name" -o tsv
+        echo "✅ Storage account accessible via RBAC"
+
+  - task: bash@3
+    displayName: 'Terraform Init with RBAC'
+    inputs:
+      targetType: 'inline'
+      script: |
         set -e
+        cd "${{ parameters.terraformPath }}"
+        BACKEND_KEY=$(basename $(pwd)).tfstate
         
-        echo "##[section]Installing Terraform..."
-        terraform version
-        
-        echo "##[section]Initializing Terraform..."
+        echo "📦 Initializing Terraform backend with RBAC authentication..."
         terraform init \
-          -backend-config="${{ parameters.backendFile }}" \
-          -reconfigure \
-          -upgrade
+          -backend-config="resource_group_name=${{ parameters.backendResourceGroup }}" \
+          -backend-config="storage_account_name=${{ parameters.backendStorageAccount }}" \
+          -backend-config="container_name=${{ parameters.backendContainer }}" \
+          -backend-config="key=${BACKEND_KEY}" \
+          -input=false \
+          -upgrade=true
         
-        echo "##[section]Terraform initialized successfully"
+        echo "✅ Terraform initialized successfully with RBAC"
+    env:
+      TF_INPUT: false
+      TF_IN_AUTOMATION: true
+      ARM_USE_AZUREAD: true
