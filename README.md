@@ -4,7 +4,7 @@
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 [![Microsoft Docs](https://img.shields.io/badge/Docs-Microsoft-0078D4?style=flat-square)](https://learn.microsoft.com/azure/aks/)
 
-**⚠️ This is a MINIMAL TEMPLATE repository with basic GitHub Copilot configuration.**
+**⚠️ This is a minimal template repository with basic GitHub Copilot configuration.**
 
 > **Note:** This template has been simplified to provide a minimal starting point. Previous versions contained extensive prompts, documentation, and examples—these are available in the git history if needed. This version focuses on a clean foundation for your infrastructure projects.
 
