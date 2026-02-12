@@ -1,23 +1,24 @@
-# Contributing to AKS Landing Zone - GitHub Copilot Prompt Template
+# Contributing to AKS Landing Zone Template
 
-Thank you for your interest in contributing! This template helps users generate AKS infrastructure using GitHub Copilot, and we welcome improvements to prompts, documentation, and examples.
+Thank you for your interest in contributing! This is a minimal template repository to help users build AKS infrastructure with GitHub Copilot assistance.
+
+> **Note:** This template has been simplified. Previous versions contained extensive prompts, documentation, and examples in `.github/prompts/`, `.github/docs/`, `.github/examples/`, and `.github/instructions/` directories. These have been removed to provide a minimal starting point. Historical content is available in git history if needed.
 
 ## 🎯 What We Accept
 
 ### ✅ DO Submit PRs With:
 
-- **Prompt improvements** - Better wording, clearer instructions, additional context
-- **Documentation updates** - Corrections, clarifications, new decision guides
-- **Example configurations** - New scenarios, updated best practices
-- **Bug fixes** - Errors in prompts, broken links, typos
-- **New features** - Additional deployment scenarios, configuration options
-- **Microsoft docs updates** - Keep aligned with latest Azure/AKS best practices
-- **Instruction updates** - Improved auto-apply coding standards
+- **Template improvements** - Better structure, clearer instructions
+- **Documentation updates** - Corrections, clarifications, enhancements
+- **Bug fixes** - Errors in documentation, broken links, typos
+- **GitHub Copilot configuration** - Improvements to `.github/copilot-instructions.md`
+- **Workflow improvements** - Better CI/CD, automation enhancements
+- **Dependency updates** - Keep dependencies current
 
 ### ❌ Do NOT Submit PRs With:
 
-- **Your generated Terraform code** - This is a template, not a code repository
-- **Your environment-specific configurations** - Keep your secrets and configs private
+- **Your generated infrastructure code** - This is a template, not an infrastructure repository
+- **Your environment-specific configurations** - Keep your configs private
 - **Your company's infrastructure details** - This is a public template
 - **Terraform state files** - Never commit state files
 - **Azure credentials or secrets** - Never commit sensitive information
@@ -48,99 +49,47 @@ Thank you for your interest in contributing! This template helps users generate 
 
 ## 📝 Contribution Guidelines
 
-### Prompt Updates
-
-When updating prompts in `.github/prompts/`:
-
-- **Test with GitHub Copilot** - Ensure prompts generate valid code
-- **Follow AVM standards** - Align with Azure Verified Modules patterns
-- **Include examples** - Show expected output or usage patterns
-- **Document decisions** - Explain why changes improve code generation
-- **Maintain placeholders** - Keep `[DECISION REQUIRED]` pattern for user input
-- **Update related docs** - If prompt changes affect decision guides, update those too
-
-**Example:**
-```markdown
-Before:
-"Create an AKS cluster with Azure CNI"
-
-After:
-"Create an AKS cluster with Azure CNI Overlay networking using Cilium data plane"
-```
-
 ### Documentation Updates
 
-When updating documentation in `.github/docs/`:
+When updating documentation:
 
-- **Based on official Microsoft docs** - Reference microsoft.com sources
-- **Include version info** - Note when features/recommendations changed
-- **Update decision guides** - Keep configuration options current
-- **Add compatibility info** - Document what works together
-- **Include examples** - Show real-world usage patterns
-- **Cross-reference** - Link to related docs and prompts
+- **Use clear language** - Make it easy to understand
+- **Include examples** - Show how things work
+- **Update related docs** - Keep documentation consistent
+- **Test instructions** - Verify they work as described
+- **Follow markdown style** - Use consistent formatting
 
-### Example Configuration Updates
+### GitHub Copilot Configuration
 
-When updating examples in `.github/examples/`:
+When updating `.github/copilot-instructions.md`:
 
-- **Use realistic values** - Represent actual production scenarios
-- **Include comprehensive comments** - Explain every configuration option
-- **Follow naming conventions** - Use consistent resource naming
-- **Validate configurations** - Ensure they work with latest AVM modules
-- **Document use cases** - Clearly state when to use each example
-- **Include security defaults** - Show secure configuration patterns
-
-### Instruction Updates
-
-When updating instructions in `.github/instructions/`:
-
-- **Align with AVM standards** - Follow official Azure Verified Modules guidelines
-- **Test with Copilot** - Verify instructions are applied correctly
-- **Document patterns** - Explain coding standards and conventions
-- **Include examples** - Show correct vs incorrect patterns
-- **Update version references** - Keep module versions current
+- **Test with GitHub Copilot** - Ensure instructions are effective
+- **Keep it minimal** - Only essential guidance
+- **Document decisions** - Explain why instructions are needed
+- **Follow best practices** - Align with GitHub Copilot guidelines
 
 ---
 
 ## 🧪 Testing Your Changes
 
-### 1. Test Prompt Changes
-
-```bash
-# Create a test directory outside the template repo
-mkdir -p /tmp/aks-test
-cd /tmp/aks-test
-
-# Copy your updated prompt
-cp /path/to/aks-lz-ghcp/.github/prompts/spoke-aks.prompt.md .
-
-# Open in VS Code and test with Copilot
-code spoke-aks.prompt.md
-
-# Ask Copilot to implement
-# Verify the generated code follows AVM standards
-```
-
-### 2. Validate Documentation
+### Test Documentation Changes
 
 ```bash
 # Check for broken links
 npm install -g markdown-link-check
-find .github/docs -name "*.md" -exec markdown-link-check {} \;
+find . -name "*.md" -exec markdown-link-check {} \;
 
 # Check spelling (optional)
 npm install -g cspell
-find .github -name "*.md" -exec cspell {} \;
+find . -name "*.md" -exec cspell {} \;
 ```
 
-### 3. Validate Examples
+### Validate Markdown Formatting
 
 ```bash
-# Verify example tfvars have valid HCL syntax
-terraform fmt -check .github/examples/
-
-# Check for sensitive data
-git secrets --scan .github/examples/
+# Ensure consistent markdown style
+npm install -g markdownlint-cli
+markdownlint '**/*.md'
 ```
 
 ---
@@ -165,10 +114,10 @@ Use conventional commit format:
 <type>(<scope>): <description>
 
 Examples:
-feat(prompts): add Azure CNI Overlay with Cilium option
-docs(decisions): update network plugin selection guide
-fix(examples): correct outbound type for egress restriction
-chore(deps): update AVM module versions
+feat(template): add new GitHub Copilot instructions
+docs(readme): update getting started guide
+fix(contributing): correct broken link
+chore(deps): update dependabot configuration
 ```
 
 **Types:**
@@ -190,19 +139,18 @@ Why is this change needed? What problem does it solve?
 
 ## Changes
 - List of specific changes
-- Update to X prompt
-- New decision guide for Y
+- Update to X file
+- New feature Y
 
 ## Testing
 How did you test these changes?
 
-## Microsoft Docs References
-Links to official Microsoft documentation supporting these changes
+## References
+Links to relevant documentation or issues
 
 ## Checklist
-- [ ] Tested prompts with GitHub Copilot
+- [ ] Tested changes
 - [ ] Updated related documentation
-- [ ] Updated examples if needed
 - [ ] No sensitive information included
 - [ ] Follows contribution guidelines
 ```
@@ -226,36 +174,16 @@ Links to official Microsoft documentation supporting these changes
 - Keep lines under 120 characters where possible
 - Use reference-style links for readability
 
-### HCL/Terraform Style
-
-For example tfvars:
-```hcl
-# ============================================================================
-# Section Header
-# ============================================================================
-
-# Brief description of this variable
-variable_name = "value"
-
-# Multi-line values
-list_variable = [
-  "item1",
-  "item2",
-]
-```
-
 ### File Organization
 
 ```
 .github/
-├── prompts/              # Copilot code generation prompts
-├── docs/                 # User-facing documentation
-│   ├── *.md             # Decision guides, references
-│   └── diagrams/        # Architecture diagrams (if any)
-├── examples/            # Example configurations
-│   └── *.tfvars        # Reference implementations
-├── instructions/        # Auto-applied Copilot instructions
-└── demos/              # Validation and testing guides
+├── copilot-instructions.md  # GitHub Copilot configuration
+└── dependabot.yml          # Dependency update automation
+
+docs/                        # Project documentation
+infra/                       # Infrastructure code
+scripts/                     # Automation scripts
 ```
 
 ---
@@ -265,8 +193,8 @@ list_variable = [
 ### Before Creating an Issue
 
 1. **Search existing issues** - Check if it's already reported
-2. **Verify it's a template issue** - Not an issue with generated code
-3. **Check Microsoft docs** - Ensure it's not expected behavior
+2. **Verify it's a template issue** - Not an issue with your generated code
+3. **Check documentation** - Ensure it's not expected behavior
 4. **Test with latest version** - Use the latest template version
 
 ### Issue Template
@@ -279,8 +207,8 @@ Clear description of the issue
 
 **Location**
 Which file(s) are affected?
-- .github/prompts/spoke-aks.prompt.md
-- .github/docs/aks-configuration-decisions.md
+- README.md
+- .github/copilot-instructions.md
 
 **Expected Behavior**
 What should happen?
@@ -289,20 +217,17 @@ What should happen?
 What actually happens?
 
 **Steps to Reproduce**
-1. Open prompt file
-2. Ask Copilot to implement
+1. Open file
+2. Follow instructions
 3. See error
 
 **Environment**
 - GitHub Copilot version:
 - VS Code version:
-- Date used template:
+- Template version:
 
 **Screenshots**
 If applicable, add screenshots
-
-**Microsoft Docs References**
-Link to relevant Microsoft documentation
 ```
 
 ---
@@ -313,12 +238,10 @@ Link to relevant Microsoft documentation
 - [Azure Kubernetes Service](https://learn.microsoft.com/azure/aks/)
 - [AKS Baseline Architecture](https://learn.microsoft.com/azure/architecture/reference-architectures/containers/aks/baseline-aks)
 - [Azure Verified Modules](https://aka.ms/avm)
-- [Azure CNI Powered by Cilium](https://learn.microsoft.com/azure/aks/azure-cni-powered-by-cilium)
 
-### Template Documentation
-- [Decision Guides](.github/docs/)
-- [Example Configurations](.github/examples/)
-- [Prompt Templates](.github/prompts/)
+### GitHub Resources
+- [GitHub Copilot Documentation](https://docs.github.com/copilot)
+- [GitHub Actions](https://docs.github.com/actions)
 
 ### Terraform Resources
 - [Terraform AzureRM Provider](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs)
