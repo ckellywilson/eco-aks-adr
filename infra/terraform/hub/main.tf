@@ -273,8 +273,8 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks" {
         type = "Https"
         port = 443
       }
-      source_addresses = local.allowed_source_addresses
-      fqdn_tags        = ["AzureKubernetesService"]
+      source_addresses      = local.allowed_source_addresses
+      destination_fqdn_tags = ["AzureKubernetesService"]
     }
   }
 

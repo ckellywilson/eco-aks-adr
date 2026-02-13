@@ -124,8 +124,8 @@ application_rule_collection {
       type = "Https"
       port = 443
     }
-    source_addresses = local.allowed_source_addresses
-    fqdn_tags        = ["AzureKubernetesService"]
+    source_addresses      = local.allowed_source_addresses
+    destination_fqdn_tags = ["AzureKubernetesService"]
   }
 }
 ```
