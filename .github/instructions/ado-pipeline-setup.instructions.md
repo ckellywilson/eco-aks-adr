@@ -1,0 +1,266 @@
+# ADO Pipeline Setup Specification
+
+This document is the **authoritative specification** for setting up Azure DevOps pipelines in this repository. It covers the end-to-end process from service connection creation to pipeline execution.
+
+**Automation script**: `scripts/setup-ado-pipeline.sh` implements this spec. Run the script for automated setup, or follow this document for manual steps.
+
+---
+
+## Guidance Philosophy
+
+This spec follows the same principle as all instructions in this repository: prescribe architecture and constraints, reference authoritative docs for values Microsoft may update. Copilot agents MUST consult latest documentation before modifying pipeline configurations.
+
+- [Azure DevOps YAML schema](https://learn.microsoft.com/en-us/azure/devops/pipelines/yaml-schema)
+- [Workload Identity Federation for ADO](https://learn.microsoft.com/en-us/azure/devops/pipelines/library/connect-to-azure?view=azure-devops#create-an-azure-resource-manager-service-connection-using-workload-identity-federation)
+- [Terraform on Azure Pipelines](https://learn.microsoft.com/en-us/azure/devops/pipelines/release/automate-terraform)
+
+---
+
+## Architecture Overview
+
+### Authentication Chain
+
+```
+ADO Pipeline
+  └─→ AzureCLI@2 task (addSpnToEnvironment: true)
+      └─→ Exports: servicePrincipalId, tenantId, idToken
+          └─→ Terraform env vars: ARM_CLIENT_ID, ARM_TENANT_ID, ARM_OIDC_TOKEN, ARM_USE_OIDC
+              └─→ Azure RM Provider authenticates via OIDC (no secrets)
+              └─→ Backend authenticates via OIDC (use_azuread_auth in tfbackend)
+```
+
+### Variable Strategy
+
+| Type | Storage | Example |
+|---|---|---|
+| Non-sensitive config | Committed `prod.tfvars` | subscription_id, location, SKUs |
+| Complex types (maps, objects) | Committed `prod.tfvars` | spoke_vnets, tags |
+| Secrets | ADO pipeline secret variable | admin_ssh_public_key |
+| Service auth | Workload Identity Federation | No stored credentials |
+
+**Rationale**: Only 1 secret exists per deployment. Complex HCL types don't translate to flat ADO variable group strings. Committed tfvars provide PR review for config changes.
+
+### Pipeline command pattern
+
+```bash
+terraform plan -var-file="prod.tfvars" -var="admin_ssh_public_key=$(ADMIN_SSH_PUBLIC_KEY)"
+```
+
+---
+
+## Prerequisites
+
+Before running the setup script or manual steps:
+
+1. **Azure CLI** authenticated to the target subscription (`az login`)
+2. **ADO PAT** with scopes: `Build (Read & Execute)`, `Code (Read)`, `Work Items (Read & Write)`
+3. **GitHub service connection** in the ADO project (for GitHub-hosted repos)
+4. **jq** and **curl** installed
+5. Pipeline YAML committed and pushed to the repository
+
+---
+
+## Setup Process
+
+### Automated (Recommended)
+
+```bash
+# Set required environment variables
+export ADO_ORG="myorg"
+export ADO_PROJECT="my-project"
+export GITHUB_REPO="owner/repo"
+export AZURE_SUBSCRIPTION_ID="00000000-0000-0000-0000-000000000000"
+export AZURE_DEVOPS_PAT="<your-pat>"
+export SSH_PUBLIC_KEY="ssh-ed25519 AAAA..."  # Optional
+
+# Run setup
+./scripts/setup-ado-pipeline.sh
+```
+
+The script is **idempotent** — safe to re-run. It checks for existing resources before creating.
+
+### Manual Steps
+
+If you prefer manual setup or need to troubleshoot:
+
+#### Step 1: Create App Registration
+
+```bash
+az ad app create --display-name "azure-hub-prod"
+az ad sp create --id <app-id>
+```
+
+#### Step 2: Grant RBAC
+
+```bash
+az role assignment create \
+  --assignee-object-id <sp-object-id> \
+  --assignee-principal-type ServicePrincipal \
+  --role "Contributor" \
+  --scope "/subscriptions/<subscription-id>"
+
+az role assignment create \
+  --assignee-object-id <sp-object-id> \
+  --assignee-principal-type ServicePrincipal \
+  --role "Storage Blob Data Contributor" \
+  --scope "/subscriptions/<subscription-id>"
+```
+
+**Why Storage Blob Data Contributor?** Terraform backend uses Azure AD auth (`use_azuread_auth = true` in `.tfbackend`) to read/write state blobs. This role is required alongside Contributor.
+
+#### Step 3: Create ADO Service Connection
+
+In ADO Portal: **Project Settings → Service connections → New → Azure Resource Manager → Workload Identity Federation (Manual)**
+
+Set:
+- Subscription ID and tenant ID
+- Service Principal (client) ID from Step 1
+- Name: matches `azureSubscription` in pipeline YAML
+
+#### Step 4: Create Federated Credential
+
+After creating the service connection, get the issuer and subject from the connection details, then:
+
+```bash
+az ad app federated-credential create \
+  --id <app-object-id> \
+  --parameters '{
+    "name": "ado-<project>-<pipeline>",
+    "issuer": "<from-service-connection>",
+    "subject": "<from-service-connection>",
+    "audiences": ["api://AzureADTokenExchange"]
+  }'
+```
+
+#### Step 5: Grant Pipeline Access
+
+In ADO Portal: **Project Settings → Service connections → <connection> → Security → Grant access permission to all pipelines**
+
+#### Step 6: Create Pipeline
+
+In ADO Portal: **Pipelines → New pipeline → GitHub → Select repo → Existing YAML → Select file path**
+
+#### Step 7: Set Pipeline Secret Variable
+
+In ADO Portal: **Pipelines → <pipeline> → Edit → Variables → New variable**
+- Name: `ADMIN_SSH_PUBLIC_KEY`
+- Value: your SSH public key
+- Check **"Keep this value secret"**
+
+---
+
+## Pipeline YAML Structure
+
+### Stages
+
+| Stage | Purpose | Depends On |
+|---|---|---|
+| Validate | `terraform init`, `fmt -check`, `validate` | — |
+| Plan | `terraform plan -out=tfplan` | Validate |
+| Apply | `terraform apply tfplan` | Plan (main branch only) |
+
+### Apply Stage Condition
+
+```yaml
+condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+```
+
+Apply only runs on the `main` branch. Feature branches get validate + plan only.
+
+### OIDC Token Pattern
+
+Each stage must independently authenticate because OIDC tokens are short-lived:
+
+```yaml
+- task: AzureCLI@2
+  inputs:
+    azureSubscription: '<service-connection-name>'
+    addSpnToEnvironment: true
+    inlineScript: |
+      export ARM_CLIENT_ID=$servicePrincipalId
+      export ARM_TENANT_ID=$tenantId
+      export ARM_OIDC_TOKEN=$idToken
+      export ARM_USE_OIDC=true
+      export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+      # Terraform commands here
+```
+
+**CRITICAL**: The `AzureCLI@2` task with `addSpnToEnvironment: true` exposes the OIDC credentials as environment variables. These must be re-exported as `ARM_*` variables for the Terraform AzureRM provider.
+
+---
+
+## Gitignore Configuration
+
+The `.gitignore` must allow `prod.tfvars` for committed config (secrets removed):
+
+```gitignore
+# EXCEPTION: Keep production tfvars (secrets removed, pipeline uses secret variables)
+!infra/terraform/hub/prod.tfvars
+```
+
+**CRITICAL**: Never commit secrets in tfvars. The SSH key is set via pipeline secret variable.
+
+---
+
+## Adding New Pipelines
+
+To add a pipeline for a new deployment (e.g., spoke):
+
+1. Create pipeline YAML in `pipelines/<name>.yml`
+2. Add gitignore exception for the deployment's `prod.tfvars`
+3. Run setup script with different parameters:
+   ```bash
+   export PIPELINE_YAML_PATH="pipelines/spoke-deploy.yml"
+   export SERVICE_CONNECTION_NAME="azure-spoke-prod"
+   export PIPELINE_NAME="spoke-deploy"
+   ./scripts/setup-ado-pipeline.sh
+   ```
+4. The script creates a new App Registration, service connection, and pipeline
+
+### Reusing Service Connections
+
+If multiple pipelines deploy to the same subscription, they CAN share a service connection. Set `SERVICE_CONNECTION_NAME` to the existing connection name and the script will reuse it.
+
+---
+
+## Troubleshooting
+
+### "No pool was specified"
+
+The pipeline definition was created via API without a pool. The setup script handles this automatically. If manual, update the definition to use queue "Azure Pipelines".
+
+### "Unsupported argument" in Terraform
+
+Check the AzureRM provider version and attribute names. Example: use `destination_fqdn_tags` not `fqdn_tags` for firewall rules.
+
+### "Error acquiring state lock"
+
+See `.github/instructions/terraform-deploy.instructions.md` for state lock recovery.
+
+### OIDC token expiry
+
+Each stage re-authenticates independently. If a long-running apply exceeds the token lifetime, consider splitting into targeted applies.
+
+### "Authorization failed" on backend
+
+Ensure the service principal has **Storage Blob Data Contributor** on the storage account or subscription. The `use_azuread_auth = true` backend setting requires this role.
+
+---
+
+## Security Considerations
+
+1. **No stored secrets**: Workload Identity Federation uses OIDC tokens — no client secrets to rotate
+2. **Pipeline secrets are masked**: ADO encrypts and masks secret variables in logs
+3. **Least privilege**: Grant RBAC at subscription level for initial setup; narrow to resource group scope once resource groups are stable
+4. **PAT lifecycle**: The ADO PAT used for setup is NOT used at runtime. Rotate or revoke after setup.
+
+---
+
+## Related Specifications
+
+- **Hub deployment spec**: `.github/instructions/hub-deploy.instructions.md`
+- **Terraform deploy workflow**: `.github/instructions/terraform-deploy.instructions.md`
+- **Terraform destroy workflow**: `.github/instructions/terraform-destroy.instructions.md`
+- **AVM modules**: `.github/instructions/azure-verified-modules-terraform.instructions.md`
+- **Setup script**: `scripts/setup-ado-pipeline.sh`
+- **Hub pipeline YAML**: `pipelines/hub-deploy.yml`
