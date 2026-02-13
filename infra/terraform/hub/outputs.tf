@@ -43,6 +43,11 @@ output "firewall_public_ip" {
   value       = try(azurerm_public_ip.firewall[0].ip_address, null)
 }
 
+output "firewall_policy_id" {
+  description = "Firewall policy ID for spoke rule collection groups (priority >= 500)"
+  value       = try(azurerm_firewall_policy.hub[0].id, null)
+}
+
 output "bastion_id" {
   description = "Azure Bastion resource ID"
   value       = try(module.bastion[0].bastion_id, null)

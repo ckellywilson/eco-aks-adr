@@ -264,40 +264,24 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks" {
     priority = 110
     action   = "Allow"
 
+    # Use Azure-managed FQDN tag — auto-maintained by Microsoft with current AKS egress FQDNs.
+    # Replaces manually enumerated FQDNs (MCR, AKS API, management endpoints, etc.)
+    # Reference: https://learn.microsoft.com/en-us/azure/firewall/fqdn-tags
     rule {
-      name = "aks-api-server"
-      protocols {
-        type = "Https"
-        port = 443
-      }
-      source_addresses  = local.allowed_source_addresses
-      destination_fqdns = ["*.hcp.${var.location}.azmk8s.io"]
-    }
-
-    rule {
-      name = "microsoft-container-registry"
-      protocols {
-        type = "Https"
-        port = 443
-      }
-      source_addresses  = local.allowed_source_addresses
-      destination_fqdns = ["mcr.microsoft.com", "*.cdn.mscr.io", "*.data.mcr.microsoft.com"]
-    }
-
-    rule {
-      name = "azure-management"
+      name = "aks-fqdn-tag"
       protocols {
         type = "Https"
         port = 443
       }
       source_addresses = local.allowed_source_addresses
-      destination_fqdns = [
-        "management.azure.com",
-        "login.microsoftonline.com",
-        "packages.microsoft.com",
-        "acs-mirror.azureedge.net"
-      ]
+      fqdn_tags        = ["AzureKubernetesService"]
     }
+  }
+
+  application_rule_collection {
+    name     = "shared-dependencies"
+    priority = 200
+    action   = "Allow"
 
     rule {
       name = "azure-monitor"
@@ -323,6 +307,10 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks" {
       destination_fqdns = ["*.azurecr.io"]
     }
 
+    # TODO: Move to spoke rule collection group (priority >= 500) when spoke pipeline exists.
+    # This is a spoke-specific rule for AKS node bootstrapping.
+    # Per split ownership model (hub-deploy.instructions.md), spoke-specific rules
+    # should be owned by the spoke deployment targeting the hub's firewall_policy_id.
     rule {
       name = "ubuntu-package-repositories"
       protocols {
