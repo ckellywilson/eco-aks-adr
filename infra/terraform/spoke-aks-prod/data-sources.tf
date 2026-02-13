@@ -12,7 +12,7 @@ data "terraform_remote_state" "hub" {
     resource_group_name  = "rg-terraform-state-dev"
     storage_account_name = "sttfstatedevd3120d7a"
     container_name       = "terraform-state-prod"
-    key                  = "hub-eastus/terraform.tfstate"
+    key                  = "hub/terraform.tfstate"
     use_azuread_auth     = true
   }
 }

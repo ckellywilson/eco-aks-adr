@@ -71,7 +71,7 @@ See [.gitignore.template](.gitignore.template) for details.
 "Validate my Terraform code"
 
 # Step 3.4: Deploy infrastructure
-cd infra/terraform/hub-eastus && ./deploy.sh dev
+cd infra/terraform/hub && ./deploy.sh dev
 cd infra/terraform/spoke-aks-prod && ./deploy.sh dev
 ```
 

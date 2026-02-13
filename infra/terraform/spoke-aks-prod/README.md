@@ -40,12 +40,12 @@ The spoke includes:
 
 1. **Hub Infrastructure** must be deployed first:
    ```bash
-   cd ../hub-eastus
+   cd ../hub
    ./deploy.sh dev  # or prod
    cd ../spoke-aks-prod
    ```
 
-2. **Hub Outputs**: Hub deployment generates `hub-eastus-outputs.json` which spoke consumes for:
+2. **Hub Outputs**: Hub deployment generates `hub-outputs.json` which spoke consumes for:
    - Hub VNet ID (for peering)
    - Firewall private IP (for UDR)
    - Log Analytics workspace ID (for monitoring)
@@ -63,7 +63,7 @@ The spoke includes:
 ### Step 1: Deploy Hub Infrastructure
 
 ```bash
-cd ../hub-eastus
+cd ../hub
 terraform init -backend-config="backend-dev.tfbackend"
 terraform plan -var-file="dev.tfvars"
 terraform apply
@@ -98,11 +98,11 @@ terraform output -json > spoke-aks-prod-outputs.json
 
 ### Hub Outputs Consumption
 
-The spoke reads hub outputs from `../hub-eastus/hub-eastus-outputs.json`:
+The spoke reads hub outputs from `../hub/hub-outputs.json`:
 
 ```hcl
 locals {
-  hub_outputs = jsondecode(file("../hub-eastus/hub-eastus-outputs.json"))
+  hub_outputs = jsondecode(file("../hub/hub-outputs.json"))
 }
 ```
 

@@ -77,7 +77,7 @@ After deployment, the following outputs are available:
 - `log_analytics_workspace_id`: Workspace ID for spoke diagnostic settings
 - `private_dns_zone_ids`: Map of DNS zone IDs for spoke private endpoints
 
-These outputs are exported to `hub-eastus-outputs.json` after `terraform apply` and consumed by spoke configurations.
+These outputs are exported to `hub-outputs.json` after `terraform apply` and consumed by spoke configurations.
 
 ## Configuration Files
 
@@ -224,7 +224,7 @@ Then run `terraform plan` and `terraform apply` to create the peering connection
 ## Next Steps
 
 1. Deploy hub infrastructure (without spokes)
-2. Generate outputs: `hub-eastus-outputs.json`
+2. Generate outputs: `hub-outputs.json`
 3. Review outputs
 4. Deploy spoke infrastructure referencing hub outputs
 5. Update hub configuration with spoke_vnets and redeploy to establish peering

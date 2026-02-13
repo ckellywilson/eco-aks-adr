@@ -81,22 +81,29 @@ module "spoke_vnet" {
   tags             = local.common_tags
 }
 
-# Link spoke VNet to AKS private DNS zone
-# REQUIRED for hub-spoke topology with custom DNS pointing to hub's DNS Resolver.
-# Empirical testing confirms that BOTH hub and spoke VNets must be linked to the
-# private DNS zone when the spoke uses custom DNS pointing to the hub's DNS Resolver.
-# This ensures proper DNS resolution during node bootstrap when nodes query the hub's
-# DNS resolver inbound endpoint.
+# Spoke VNet DNS zone link REMOVED — not required for peering-only architecture.
+# The spoke VNet uses custom DNS pointing to the hub DNS resolver inbound endpoint.
+# The hub resolver's VNet is linked to all private DNS zones, so the spoke resolves
+# private endpoints through the resolver chain without needing direct zone links.
+#
+# History: A spoke VNet link was previously added here while debugging an AKS
+# deployment failure. The actual root causes were:
+#   1. Wrong AVM property name ("private_dns_zone_id" instead of "private_dns_zone")
+#      in api_server_access_profile
+#   2. AKS nodes couldn't reach Ubuntu package repos through Azure Firewall for
+#      container image validation (firewall egress rules)
+# Neither issue was DNS zone linking. Once the property name and firewall rules
+# were corrected, the spoke VNet link was unnecessary.
+#
+# If AKS node bootstrap DNS resolution fails in future deployments, re-add:
+#   resource "azurerm_private_dns_zone_virtual_network_link" "aks_private_dns_spoke_link" {
+#     name                  = "link-privatelink.${var.location}.azmk8s.io-spoke"
+#     resource_group_name   = var.hub_resource_group_name
+#     private_dns_zone_name = "privatelink.${var.location}.azmk8s.io"
+#     virtual_network_id    = module.spoke_vnet.resource_id
+#     registration_enabled  = false
+#   }
 # Reference: https://learn.microsoft.com/en-us/azure/aks/private-clusters#hub-and-spoke-with-custom-dns-for-private-aks-clusters
-resource "azurerm_private_dns_zone_virtual_network_link" "aks_private_dns_spoke_link" {
-  name                  = "link-privatelink.${var.location}.azmk8s.io-spoke"
-  resource_group_name   = var.hub_resource_group_name
-  private_dns_zone_name = "privatelink.${var.location}.azmk8s.io"
-  virtual_network_id    = module.spoke_vnet.resource_id
-  registration_enabled  = false
-
-  tags = local.common_tags
-}
 
 # Route table for spoke with UDR to hub firewall
 resource "azurerm_route_table" "spoke" {
@@ -210,7 +217,7 @@ resource "azurerm_network_security_group" "aks_nodes" {
 }
 
 # VNet Peering is configured from hub side (hub-to-spoke and spoke-to-hub)
-# See hub-eastus/main.tf for peering resources
+# See hub/main.tf for peering resources
 
 # AKS Cluster with Azure Verified Module
 module "aks_cluster" {

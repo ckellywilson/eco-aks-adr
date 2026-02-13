@@ -54,7 +54,7 @@ nginx_internal_lb_ip = "10.1.0.50"
 
 # Hub connectivity
 hub_resource_group_name = "rg-hub-eus2-prod"
-hub_name                = "hub-eastus"
+hub_name                = "hub"
 
 # SSH public key for VM access
 # Generate a new key: ssh-keygen -t ed25519 -C "your-email@example.com"

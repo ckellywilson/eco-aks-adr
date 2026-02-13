@@ -165,7 +165,7 @@ variable "hub_resource_group_name" {
 variable "hub_name" {
   description = "Hub name (for reading outputs)"
   type        = string
-  default     = "hub-eastus"
+  default     = "hub"
 }
 
 variable "custom_dns_servers" {

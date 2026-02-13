@@ -69,7 +69,7 @@ Before running `terraform destroy`, ALWAYS complete these checks:
    - Spoke VNets with peering to hub
    - Application resources
 
-2. **Hub deployments LAST** (e.g., `hub-eastus`)
+2. **Hub deployments LAST** (e.g., `hub`)
    - Hub VNet
    - Azure Firewall
    - VPN Gateway
