@@ -710,3 +710,88 @@ kubectl get ingress -A
 
 This section is a quick-start operational summary. For complete documentation including DNS configuration, TLS setup, and troubleshooting, see the **NGINX Ingress Controller (Internal Load Balancer)** section earlier in this README.
 
+## Firewall Rules
+
+### Spoke Firewall Rule Collection Group
+
+The spoke deployment creates its own firewall rule collection group on the hub's firewall policy at priority 500+ (hub baseline rules use priority 100-499). This enables spoke-specific egress rules without modifying hub infrastructure.
+
+**Automatically configured:**
+- **Ubuntu package repositories** - Allows apt/dpkg access for jump box and Ubuntu-based workloads
+  - security.ubuntu.com
+  - archive.ubuntu.com
+  - packages.ubuntu.com
+  - *.archive.ubuntu.com
+- **Placeholder application rule collection** - Ready for custom application FQDNs
+
+**Adding custom application rules:**
+
+Edit `main.tf` and add FQDNs to the `spoke-application-rules` collection:
+
+```hcl
+destination_fqdns = [
+  "api.myapp.com",
+  "cdn.myapp.com",
+  "*.azurewebsites.net"
+]
+```
+
+Then reapply Terraform:
+
+```bash
+terraform plan -var-file="prod.tfvars"
+terraform apply
+```
+
+**View firewall rules:**
+
+```bash
+# List all rule collection groups on hub firewall policy
+az network firewall policy rule-collection-group list \
+  --policy-name afwpol-hub-prod-eus2 \
+  --resource-group rg-hub-eus2-prod
+
+# View spoke-specific rules
+az network firewall policy rule-collection-group show \
+  --name spoke-aks-prod \
+  --policy-name afwpol-hub-prod-eus2 \
+  --resource-group rg-hub-eus2-prod
+```
+
+**Monitoring firewall traffic:**
+
+```bash
+# View firewall logs in Log Analytics workspace
+az monitor log-analytics query \
+  --workspace <workspace-id> \
+  --analytics-query "AzureDiagnostics | where Category == 'AzureFirewallApplicationRule' | where SourceIp startswith '10.1.' | top 100 by TimeGenerated desc"
+```
+
+### Best Practices
+
+1. **Minimize FQDN lists** - Use Azure-managed FQDN tags where available (already configured for AKS via hub)
+2. **Restrict source addresses** - Spoke rules use spoke VNet CIDR only (10.1.0.0/16)
+3. **Priority management** - Keep spoke rules at 500+ to avoid conflicts with hub baseline
+4. **Test before production** - Validate egress connectivity in dev environment first
+5. **Monitor firewall logs** - Review blocked requests regularly to adjust rules
+
+### Troubleshooting Egress Issues
+
+**If workloads cannot reach external services:**
+
+```bash
+# Check if traffic is blocked by firewall
+# SSH to jump box via Bastion
+curl -v https://example.com
+
+# View firewall logs for denials
+az monitor log-analytics query \
+  --workspace <workspace-id> \
+  --analytics-query "AzureDiagnostics | where Category == 'AzureFirewallApplicationRule' | where Action_s == 'Deny' | where SourceIp startswith '10.1.'"
+```
+
+**Common causes:**
+- FQDN not in allowed list (add to spoke-application-rules)
+- Port mismatch (verify protocol/port in rule)
+- Source address restriction (verify spoke CIDR in rule)
+

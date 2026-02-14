@@ -87,6 +87,11 @@ output "acr_name" {
   value       = module.acr.name
 }
 
+output "acr_login_server" {
+  description = "Azure Container Registry login server FQDN"
+  value       = module.acr.login_server
+}
+
 output "key_vault_id" {
   description = "Key Vault resource ID"
   value       = module.key_vault.resource_id
@@ -95,6 +100,11 @@ output "key_vault_id" {
 output "key_vault_name" {
   description = "Key Vault name"
   value       = module.key_vault.name
+}
+
+output "key_vault_uri" {
+  description = "Key Vault URI for application secret access"
+  value       = module.key_vault.vault_uri
 }
 
 output "spoke_jumpbox_private_ip" {

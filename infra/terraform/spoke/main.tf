@@ -601,3 +601,68 @@ resource "azurerm_monitor_diagnostic_setting" "aks" {
     category = "AllMetrics"
   }
 }
+
+# ===========================
+# Spoke Firewall Rules
+# ===========================
+
+# Spoke-specific firewall rule collection group (priority ≥ 500)
+# Hub owns baseline rules (100-499); spoke owns application-specific rules
+resource "azurerm_firewall_policy_rule_collection_group" "spoke" {
+  count              = local.hub_outputs.firewall_policy_id != null ? 1 : 0
+  name               = "spoke-aks-${var.environment}"
+  firewall_policy_id = local.hub_outputs.firewall_policy_id
+  priority           = 500
+
+  # Spoke-specific Ubuntu package repositories
+  # These support jump box and any Ubuntu-based workloads
+  application_rule_collection {
+    name     = "spoke-ubuntu-packages"
+    priority = 510
+    action   = "Allow"
+
+    rule {
+      name = "ubuntu-repositories"
+      protocols {
+        type = "Http"
+        port = 80
+      }
+      protocols {
+        type = "Https"
+        port = 443
+      }
+      source_addresses = [
+        "10.1.0.0/16" # Spoke VNet CIDR
+      ]
+      destination_fqdns = [
+        "security.ubuntu.com",
+        "archive.ubuntu.com",
+        "packages.ubuntu.com",
+        "*.archive.ubuntu.com"
+      ]
+    }
+  }
+
+  # Placeholder for spoke-specific application rules
+  # Add custom FQDNs as needed for workload requirements
+  application_rule_collection {
+    name     = "spoke-application-rules"
+    priority = 520
+    action   = "Allow"
+
+    rule {
+      name = "placeholder"
+      protocols {
+        type = "Https"
+        port = 443
+      }
+      source_addresses = [
+        "10.1.0.0/16" # Spoke VNet CIDR
+      ]
+      destination_fqdns = [
+        # Add application-specific FQDNs here
+        # Example: "api.myapp.com", "cdn.myapp.com"
+      ]
+    }
+  }
+}

@@ -1,0 +1,170 @@
+# Spoke AKS Infrastructure Deployment Pipeline
+# Deploys spoke Terraform code per .github/instructions/spoke-deploy.instructions.md
+#
+# Prerequisites (one-time manual setup):
+#   1. Create ARM service connection 'azure-spoke-prod' with Workload Identity Federation
+#      - App Registration → Federated Credential → ADO issuer
+#      - Grant: Contributor + Storage Blob Data Contributor on subscription
+#   2. Set pipeline secret variable ADMIN_SSH_PUBLIC_KEY in pipeline UI
+#      - Go to Pipelines → spoke-deploy → Edit → Variables → New variable
+#      - Name: ADMIN_SSH_PUBLIC_KEY, Value: <your-ssh-public-key>, Keep secret: ✓
+#
+# CRITICAL: Hub infrastructure must be deployed BEFORE spoke deployment
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - infra/terraform/spoke/**
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - name: TF_WORKING_DIR
+    value: 'infra/terraform/spoke'
+  - name: ARM_USE_OIDC
+    value: 'true'
+  - name: TF_VAR_FILE
+    value: 'prod.tfvars'
+  - name: BACKEND_CONFIG
+    value: 'backend-prod.tfbackend'
+
+stages:
+  - stage: Validate
+    displayName: 'Terraform Validate'
+    jobs:
+      - job: Validate
+        displayName: 'Format & Validate'
+        steps:
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: 'latest'
+
+          - task: AzureCLI@2
+            displayName: 'Terraform Init & Validate'
+            inputs:
+              azureSubscription: 'azure-spoke-prod'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
+              inlineScript: |
+                # Export OIDC credentials for Terraform
+                export ARM_CLIENT_ID=$servicePrincipalId
+                export ARM_TENANT_ID=$tenantId
+                export ARM_OIDC_TOKEN=$idToken
+                export ARM_USE_OIDC=true
+                export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+
+                cd $(TF_WORKING_DIR)
+
+                terraform init -backend-config=$(BACKEND_CONFIG)
+                terraform fmt -check -recursive
+                terraform validate
+
+  - stage: Plan
+    displayName: 'Terraform Plan'
+    dependsOn: Validate
+    jobs:
+      - job: Plan
+        displayName: 'Generate Plan'
+        steps:
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: 'latest'
+
+          - task: AzureCLI@2
+            displayName: 'Terraform Plan'
+            inputs:
+              azureSubscription: 'azure-spoke-prod'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
+              inlineScript: |
+                export ARM_CLIENT_ID=$servicePrincipalId
+                export ARM_TENANT_ID=$tenantId
+                export ARM_OIDC_TOKEN=$idToken
+                export ARM_USE_OIDC=true
+                export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+
+                cd $(TF_WORKING_DIR)
+
+                terraform init -backend-config=$(BACKEND_CONFIG)
+                terraform plan \
+                  -var-file="$(TF_VAR_FILE)" \
+                  -var="admin_ssh_public_key=$(ADMIN_SSH_PUBLIC_KEY)" \
+                  -out=tfplan \
+                  -input=false
+
+          - publish: $(TF_WORKING_DIR)/tfplan
+            artifact: tfplan
+            displayName: 'Publish Plan Artifact'
+
+  - stage: Apply
+    displayName: 'Terraform Apply'
+    dependsOn: Plan
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - job: Apply
+        displayName: 'Apply Infrastructure'
+        steps:
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: 'latest'
+
+          - download: current
+            artifact: tfplan
+            displayName: 'Download Plan Artifact'
+
+          - task: AzureCLI@2
+            displayName: 'Terraform Apply'
+            inputs:
+              azureSubscription: 'azure-spoke-prod'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
+              inlineScript: |
+                export ARM_CLIENT_ID=$servicePrincipalId
+                export ARM_TENANT_ID=$tenantId
+                export ARM_OIDC_TOKEN=$idToken
+                export ARM_USE_OIDC=true
+                export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+
+                cd $(TF_WORKING_DIR)
+
+                terraform init -backend-config=$(BACKEND_CONFIG)
+                terraform apply -input=false $(Pipeline.Workspace)/tfplan/tfplan
+
+          - task: AzureCLI@2
+            displayName: 'Output Infrastructure Details'
+            inputs:
+              azureSubscription: 'azure-spoke-prod'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
+              inlineScript: |
+                export ARM_CLIENT_ID=$servicePrincipalId
+                export ARM_TENANT_ID=$tenantId
+                export ARM_OIDC_TOKEN=$idToken
+                export ARM_USE_OIDC=true
+                export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+
+                cd $(TF_WORKING_DIR)
+
+                terraform init -backend-config=$(BACKEND_CONFIG)
+                
+                echo "=== Spoke Infrastructure Outputs ==="
+                terraform output -json
+                
+                echo ""
+                echo "=== Post-Deployment Steps ==="
+                echo "1. Apply NGINX internal controller manifest:"
+                echo "   kubectl apply -f manifests/nginx-internal-controller.yaml"
+                echo ""
+                echo "2. Verify AKS cluster access from jump box"
+                echo "3. See README.md for complete post-deployment checklist"
