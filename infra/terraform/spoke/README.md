@@ -718,10 +718,10 @@ The spoke deployment creates its own firewall rule collection group on the hub's
 
 **Automatically configured:**
 - **Ubuntu package repositories** - Allows apt/dpkg access for jump box and Ubuntu-based workloads
-  - security.ubuntu.com
-  - archive.ubuntu.com
-  - packages.ubuntu.com
-  - *.archive.ubuntu.com
+  - security.ubuntu.com (HTTP:80)
+  - azure.archive.ubuntu.com (HTTP:80)
+  - changelogs.ubuntu.com (HTTP:80)
+  - snapshot.ubuntu.com (HTTPS:443)
 - **Placeholder application rule collection** - Ready for custom application FQDNs
 
 **Adding custom application rules:**

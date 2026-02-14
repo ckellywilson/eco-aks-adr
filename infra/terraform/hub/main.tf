@@ -321,9 +321,19 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks" {
       destination_fqdns = [
         "security.ubuntu.com",
         "azure.archive.ubuntu.com",
-        "archive.ubuntu.com",
-        "changelogs.ubuntu.com",
-        "entropy.ubuntu.com"
+        "changelogs.ubuntu.com"
+      ]
+    }
+
+    rule {
+      name = "ubuntu-snapshot-service"
+      protocols {
+        type = "Https"
+        port = 443
+      }
+      source_addresses = local.allowed_source_addresses
+      destination_fqdns = [
+        "snapshot.ubuntu.com"
       ]
     }
   }
