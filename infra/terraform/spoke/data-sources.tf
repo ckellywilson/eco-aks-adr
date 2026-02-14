@@ -17,14 +17,21 @@ data "terraform_remote_state" "hub" {
   }
 }
 
-# Read Azure Firewall to get private IP address
-# (workaround for module output issue)
-data "azurerm_firewall" "hub" {
-  name                = "afw-hub-prod-eus2"
-  resource_group_name = var.hub_resource_group_name
+# Reference the hub-created spoke resource group (hub_managed = true)
+data "azurerm_resource_group" "spoke" {
+  name = local.hub_outputs.spoke_resource_group_names[var.spoke_key]
+}
+
+# Reference the hub-created spoke VNet (hub_managed = true)
+data "azurerm_virtual_network" "spoke" {
+  name                = local.hub_outputs.spoke_vnet_names[var.spoke_key]
+  resource_group_name = data.azurerm_resource_group.spoke.name
 }
 
 locals {
   hub_outputs         = data.terraform_remote_state.hub.outputs
-  firewall_private_ip = data.azurerm_firewall.hub.ip_configuration[0].private_ip_address
+  spoke_rg_name       = data.azurerm_resource_group.spoke.name
+  spoke_vnet_id       = local.hub_outputs.spoke_vnet_ids[var.spoke_key]
+  spoke_vnet_name     = data.azurerm_virtual_network.spoke.name
+  firewall_private_ip = local.hub_outputs.firewall_private_ip
 }

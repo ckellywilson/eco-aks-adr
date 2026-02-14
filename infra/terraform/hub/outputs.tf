@@ -109,3 +109,10 @@ output "spoke_resource_group_names" {
     for k, v in azurerm_resource_group.spoke : k => v.name
   }
 }
+
+output "spoke_vnet_names" {
+  description = "Map of hub-managed spoke names to VNet names"
+  value = {
+    for k, v in module.spoke_vnet : k => v.name
+  }
+}

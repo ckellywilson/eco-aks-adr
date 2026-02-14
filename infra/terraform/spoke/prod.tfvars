@@ -1,13 +1,12 @@
 # Spoke AKS Production Environment Variables
 subscription_id = "f8a5f387-2f0b-42f5-b71f-5ee02b8967cf"
 
-environment         = "prod"
-location            = "eastus2"
-location_code       = "eus2"
-resource_group_name = "rg-aks-eus2-prod"
+environment   = "prod"
+location      = "eastus2"
+location_code = "eus2"
 
-# Network configuration
-spoke_vnet_address_space = ["10.1.0.0/16"]
+# Hub-managed spoke key (must match key in hub's spoke_vnets map)
+spoke_key = "spoke-aks-prod"
 
 # AKS Cluster configuration
 aks_cluster_name   = "aks-eco-prod-eus2"
@@ -39,10 +38,6 @@ enable_web_app_routing = true
 
 # Internal load balancer IP
 nginx_internal_lb_ip = "10.1.0.50"
-
-# Hub connectivity
-hub_resource_group_name = "rg-hub-eus2-prod"
-hub_name                = "hub-eastus"
 
 # SSH public key for VM access
 # Passed via ADO pipeline secret variable (ADMIN_SSH_PUBLIC_KEY)
