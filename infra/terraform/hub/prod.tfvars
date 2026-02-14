@@ -31,13 +31,18 @@ firewall_availability_zones = []
 # Local usage: terraform plan -var="admin_ssh_public_key=$(cat ~/.ssh/id_ed25519.pub)"
 # Pipeline:    terraform plan -var="admin_ssh_public_key=$(ADMIN_SSH_PUBLIC_KEY)"
 
-# Spoke VNets for peering
-# NOTE: Deploying hub first without spoke peering. Will add peering after spoke is deployed.
-spoke_vnets = {}
+# Spoke VNets — hub creates RG + VNet for hub_managed spokes
+spoke_vnets = {
+  "spoke-aks-prod" = {
+    hub_managed         = true
+    name                = "vnet-aks-prod-eus2"
+    resource_group_name = "rg-aks-eus2-prod"
+    address_space       = ["10.1.0.0/16"]
+  }
+}
 
-# Spoke VNet address spaces for firewall rules
-# Must include all spoke VNet CIDRs to allow outbound traffic through the firewall
-spoke_vnet_address_spaces = ["10.1.0.0/16"]
+# Additional spoke address spaces not in spoke_vnets (usually empty)
+spoke_vnet_address_spaces = []
 
 # Resource tags
 tags = {

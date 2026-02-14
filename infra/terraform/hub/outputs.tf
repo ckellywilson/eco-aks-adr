@@ -95,3 +95,17 @@ output "hub_jumpbox_id" {
   description = "Hub jump box VM resource ID"
   value       = try(azurerm_linux_virtual_machine.hub_jumpbox[0].id, null)
 }
+
+output "spoke_vnet_ids" {
+  description = "Map of hub-managed spoke names to VNet resource IDs"
+  value = {
+    for k, v in module.spoke_vnet : k => v.resource_id
+  }
+}
+
+output "spoke_resource_group_names" {
+  description = "Map of hub-managed spoke names to resource group names"
+  value = {
+    for k, v in azurerm_resource_group.spoke : k => v.name
+  }
+}

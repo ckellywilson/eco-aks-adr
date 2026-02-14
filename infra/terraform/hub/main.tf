@@ -360,56 +360,85 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks" {
 }
 
 # ===========================
+# Hub-Managed Spoke Resources
+# ===========================
+# When hub_managed = true, the hub creates the spoke RG + VNet.
+# Spoke deployments deploy INTO these resources via remote state.
+# When hub_managed = false, the spoke RG + VNet must already exist.
+
+resource "azurerm_resource_group" "spoke" {
+  for_each = local.hub_managed_spokes
+
+  name     = each.value.resource_group_name
+  location = var.location
+
+  tags = local.common_tags
+}
+
+module "spoke_vnet" {
+  for_each = local.hub_managed_spokes
+
+  source  = "Azure/avm-res-network-virtualnetwork/azurerm"
+  version = "0.9.0"
+
+  resource_group_name = azurerm_resource_group.spoke[each.key].name
+  name                = each.value.name
+  location            = var.location
+
+  address_space = each.value.address_space
+
+  # Custom DNS → hub DNS resolver inbound endpoint
+  # This is the key architectural requirement for the DNS resolution chain
+  dns_servers = {
+    dns_servers = [azurerm_private_dns_resolver_inbound_endpoint.hub[0].ip_configurations[0].private_ip_address]
+  }
+
+  enable_telemetry = true
+  tags             = local.common_tags
+
+  depends_on = [azurerm_private_dns_resolver_inbound_endpoint.hub]
+}
+
+# ===========================
 # Hub-to-Spoke VNet Peering
 # ===========================
 
-# VNet Peering Configuration
-# ---------------------------
-# This section configures bidirectional peering between the hub and spoke VNets.
-# 
-# IMPORTANT: These resources are optional and only created when var.spoke_vnets 
-# contains entries. The for_each loop handles empty maps gracefully, allowing 
-# the hub to be deployed independently without any spokes existing.
-#
-# Deployment workflow:
-# 1. Initial hub deployment: Leave spoke_vnets = {} (default)
-# 2. Deploy spoke infrastructure
-# 3. Update hub tfvars with spoke_vnets configuration
-# 4. Reapply hub to establish peering connections
-#
-# The data source will only query for VNets that are listed in var.spoke_vnets,
-# so it won't fail on initial deployment when the variable is empty.
-
+# Data source for delegated spokes (hub_managed = false) — must already exist
 data "azurerm_virtual_network" "spoke" {
-  for_each = var.spoke_vnets
+  for_each = local.delegated_spokes
 
   name                = each.value.name
   resource_group_name = each.value.resource_group_name
 }
 
-# Hub-to-Spoke Peering
-# Creates peering from hub VNet to each spoke VNet
+# Hub-to-Spoke Peering (both modes)
 resource "azurerm_virtual_network_peering" "hub_to_spoke" {
   for_each = var.spoke_vnets
 
-  name                         = "peer-hub-to-${each.key}"
-  resource_group_name          = azurerm_resource_group.hub.name
-  virtual_network_name         = module.hub_vnet.name
-  remote_virtual_network_id    = data.azurerm_virtual_network.spoke[each.key].id
+  name                 = "peer-hub-to-${each.key}"
+  resource_group_name  = azurerm_resource_group.hub.name
+  virtual_network_name = module.hub_vnet.name
+  remote_virtual_network_id = (
+    each.value.hub_managed
+    ? module.spoke_vnet[each.key].resource_id
+    : data.azurerm_virtual_network.spoke[each.key].id
+  )
   allow_virtual_network_access = true
   allow_forwarded_traffic      = true
   allow_gateway_transit        = false
   use_remote_gateways          = false
 }
 
-# Spoke-to-Hub Peering
-# Creates peering from each spoke VNet back to the hub VNet
-# This establishes bidirectional connectivity
+# Spoke-to-Hub Peering (both modes)
 resource "azurerm_virtual_network_peering" "spoke_to_hub" {
   for_each = var.spoke_vnets
 
-  name                         = "peer-${each.key}-to-hub"
-  resource_group_name          = each.value.resource_group_name
+  name = "peer-${each.key}-to-hub"
+  resource_group_name = (
+    each.value.hub_managed
+    ? azurerm_resource_group.spoke[each.key].name
+    : each.value.resource_group_name
+  )
   virtual_network_name         = each.value.name
   remote_virtual_network_id    = module.hub_vnet.resource_id
   allow_virtual_network_access = true

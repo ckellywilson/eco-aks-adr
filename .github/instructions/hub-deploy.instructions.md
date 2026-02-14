@@ -36,10 +36,60 @@ Use Azure Verified Modules (AVM) where available. Always check the [AVM Module I
 | Private DNS Zones | Private endpoint name resolution | AVM `avm-res-network-privatednszone` |
 | Jump Box VM | Management access with pre-installed tooling | `azurerm_linux_virtual_machine` |
 | VNet Peering | Bidirectional hub-spoke connectivity | `azurerm_virtual_network_peering` |
+| Spoke Resource Group | Container for spoke resources (hub_managed only) | `azurerm_resource_group` |
+| Spoke VNet | Spoke network with custom DNS to hub resolver (hub_managed only) | AVM `avm-res-network-virtualnetwork` |
 
 ### Spoke Resources Provisioned from Hub
 
-The hub deployment also creates **bidirectional VNet peering** to spoke VNets. Spoke VNets and resource groups are created by their respective spoke deployments, but the hub owns both sides of the peering connection via `var.spoke_vnets`.
+The hub deployment supports **two spoke provisioning modes**, controlled by the `hub_managed` flag in `var.spoke_vnets`:
+
+| Mode | `hub_managed` | Hub Creates | Use Case |
+|---|---|---|---|
+| **Centralized** | `true` | Spoke RG + VNet + Peering | Enterprise-controlled, dev teams deploy into pre-created RG/VNet |
+| **Delegated** | `false` | Peering only | Dev teams create their own RG + VNet, hub peers to them |
+
+#### Hub-Managed Spokes (`hub_managed = true`)
+
+The hub creates:
+1. **Spoke Resource Group** — named per convention (`rg-{spoke}-{location_code}-{env}`)
+2. **Spoke VNet** — with custom DNS set to hub DNS resolver inbound IP (automatic)
+3. **Bidirectional VNet Peering** — hub-to-spoke and spoke-to-hub
+
+The spoke deployment then deploys AKS and app resources **into** the hub-created RG and VNet, reading them via remote state.
+
+```hcl
+# Hub-managed spoke: custom DNS automatically points to hub resolver
+module "spoke_vnet" {
+  for_each = local.hub_managed_spokes
+  # ...
+  dns_servers = {
+    dns_servers = [azurerm_private_dns_resolver_inbound_endpoint.hub[0].ip_configurations[0].private_ip_address]
+  }
+}
+```
+
+#### Delegated Spokes (`hub_managed = false`)
+
+The hub only creates bidirectional peering. The spoke RG and VNet must already exist. The spoke deployment is responsible for setting custom DNS to the hub resolver IP.
+
+#### Variable Configuration
+
+```hcl
+spoke_vnets = {
+  "spoke-aks-prod" = {
+    hub_managed         = true                      # Hub creates RG + VNet
+    name                = "vnet-aks-prod-eus2"
+    resource_group_name = "rg-aks-eus2-prod"
+    address_space       = ["10.1.0.0/16"]
+  }
+  "spoke-data" = {
+    hub_managed         = false                     # Already exists, hub only peers
+    name                = "vnet-data-prod-eus2"
+    resource_group_name = "rg-data-eus2-prod"
+    address_space       = ["10.2.0.0/16"]
+  }
+}
+```
 
 ---
 
@@ -410,8 +460,8 @@ Consult the [Azure naming conventions](https://learn.microsoft.com/en-us/azure/c
 ### CRITICAL: Deploy hub BEFORE any spokes
 
 ```
-Phase 1: Hub (no spokes)
-  └─→ Resource Group
+Phase 1: Hub + hub-managed spokes
+  └─→ Hub Resource Group
   └─→ Hub VNet + Subnets
   └─→ Azure Firewall + Policy + Rules
   └─→ Azure Bastion
@@ -419,14 +469,15 @@ Phase 1: Hub (no spokes)
   └─→ Log Analytics Workspace
   └─→ Private DNS Zones (linked to hub VNet)
   └─→ Jump Box VM (optional)
+  └─→ Spoke RG + VNet (hub_managed only, custom DNS → hub resolver IP)
+  └─→ Bidirectional VNet Peering (hub_managed only)
 
-Phase 2: Spoke deployments (consume hub outputs)
-  └─→ Spoke RG + VNet (custom DNS → hub resolver IP)
-  └─→ AKS cluster + RBAC + private endpoint
+Phase 2: Spoke application deployments (consume hub outputs)
+  └─→ AKS cluster + RBAC + private endpoint (into hub-created or self-created RG/VNet)
 
-Phase 3: Hub update (add peering)
-  └─→ Update hub tfvars with spoke_vnets
-  └─→ Reapply hub to create bidirectional peering
+Phase 3: Hub update (delegated spokes only)
+  └─→ Update hub tfvars with delegated spoke_vnets (hub_managed = false)
+  └─→ Reapply hub to create bidirectional peering to existing spoke VNets
 ```
 
 ### Hub Outputs Consumed by Spokes
@@ -439,6 +490,8 @@ Phase 3: Hub update (add peering)
 | `firewall_private_ip` | Spoke route table UDR | Egress through hub firewall |
 | `firewall_policy_id` | Spoke firewall rule collection groups | Spoke-specific egress rules (priority ≥ 500) |
 | `hub_vnet_id` | Reference only | Hub VNet resource ID |
+| `spoke_vnet_ids` | Spoke deployments (hub_managed) | VNet ID for AKS subnet references |
+| `spoke_resource_group_names` | Spoke deployments (hub_managed) | RG name for deploying into |
 
 ---
 

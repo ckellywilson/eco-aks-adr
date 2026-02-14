@@ -44,6 +44,19 @@ firewall_availability_zones = []
 # WARNING: Do not commit actual SSH keys to version control
 admin_ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM... your-public-key-here"
 
+# Spoke VNets — hub_managed = true means hub creates the RG + VNet
+spoke_vnets = {
+  "spoke-aks-prod" = {
+    hub_managed         = true
+    name                = "vnet-aks-prod-eus2"
+    resource_group_name = "rg-aks-eus2-prod"
+    address_space       = ["10.1.0.0/16"]
+  }
+}
+
+# Additional spoke address spaces not in spoke_vnets (usually empty)
+spoke_vnet_address_spaces = []
+
 # Resource tags
 tags = {
   Purpose   = "AKS Landing Zone Hub"

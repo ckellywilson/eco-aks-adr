@@ -16,11 +16,16 @@ locals {
     }
   )
 
-  # Allowed source addresses for firewall rules (hub + spokes)
+  # Allowed source addresses for firewall rules (hub + all spokes)
   allowed_source_addresses = concat(
     var.hub_vnet_address_space,
+    flatten([for k, v in var.spoke_vnets : v.address_space]),
     var.spoke_vnet_address_spaces
   )
+
+  # Split spokes by provisioning mode
+  hub_managed_spokes = { for k, v in var.spoke_vnets : k => v if v.hub_managed }
+  delegated_spokes   = { for k, v in var.spoke_vnets : k => v if !v.hub_managed }
 
   subnet_config = {
     AzureFirewallSubnet = {
