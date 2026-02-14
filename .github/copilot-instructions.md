@@ -6,16 +6,23 @@ Repository-wide instructions for GitHub Copilot agents. Path-specific guidance l
 
 ## Workflow Guidelines
 
-### Development Workflow
+### Development Workflow (Code Changes)
 
-- Follow standard GitHub workflow (issue → branch → commit → PR → review → merge)
+**Required for ALL changes to `*.tf`, `*.yml` (pipelines), `*.sh` (scripts), or any functional code:**
+
+- Follow standard GitHub workflow: issue → branch → commit → PR → review → merge
 - Use conventional commit format: `<type>(scope): description`
-- Reference issues in commits: `Fixes #<issue-number>`
+- Reference issues/work items in commits: `Fixes #<issue-number>` or `AB#<work-item-id>`
 - Request Copilot review before merging PRs
+- **Copilot agents MUST create a feature branch** — never commit code changes directly to main
 
-### Administrative Tasks
+### Administrative Tasks (Direct to Main)
 
-- May work directly on main branch when appropriate (cleanup, documentation, artifact updates)
+**Only for non-functional changes that don't affect infrastructure or pipeline behavior:**
+
+- Instruction/spec files (`.github/instructions/*.instructions.md`)
+- Documentation updates (`README.md`, `CONTRIBUTING.md`)
+- Gitignore, editor config, MCP config changes
 - Still use conventional commit format
 - Document rationale in commit messages
 
