@@ -21,9 +21,14 @@ resource "azurerm_subnet" "management" {
   address_prefixes     = ["10.1.5.0/24"]
 }
 
-# Associate route table and NSG with AKS nodes subnet
+# Associate route table with AKS node subnets (required for userDefinedRouting)
 resource "azurerm_subnet_route_table_association" "aks_nodes" {
   subnet_id      = azurerm_subnet.aks_nodes.id
+  route_table_id = azurerm_route_table.spoke.id
+}
+
+resource "azurerm_subnet_route_table_association" "aks_system" {
+  subnet_id      = azurerm_subnet.aks_system.id
   route_table_id = azurerm_route_table.spoke.id
 }
 
@@ -335,6 +340,7 @@ module "aks_cluster" {
   depends_on = [
     time_sleep.wait_for_rbac,
     azurerm_subnet_route_table_association.aks_nodes,
+    azurerm_subnet_route_table_association.aks_system,
     azurerm_subnet_network_security_group_association.aks_nodes
   ]
 }
