@@ -622,23 +622,20 @@ resource "azurerm_firewall_policy_rule_collection_group" "spoke" {
     action   = "Allow"
 
     rule {
-      name = "ubuntu-repositories"
+      name = "ubuntu-package-repositories"
       protocols {
         type = "Http"
         port = 80
-      }
-      protocols {
-        type = "Https"
-        port = 443
       }
       source_addresses = [
         "10.1.0.0/16" # Spoke VNet CIDR
       ]
       destination_fqdns = [
         "security.ubuntu.com",
+        "azure.archive.ubuntu.com",
         "archive.ubuntu.com",
-        "packages.ubuntu.com",
-        "*.archive.ubuntu.com"
+        "changelogs.ubuntu.com",
+        "entropy.ubuntu.com"
       ]
     }
   }
@@ -660,8 +657,8 @@ resource "azurerm_firewall_policy_rule_collection_group" "spoke" {
         "10.1.0.0/16" # Spoke VNet CIDR
       ]
       destination_fqdns = [
-        # Add application-specific FQDNs here
-        # Example: "api.myapp.com", "cdn.myapp.com"
+        # TODO: Replace with actual application FQDNs
+        "example.com"
       ]
     }
   }
