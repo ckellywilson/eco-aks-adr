@@ -1,0 +1,97 @@
+name: "Add Spoke Resource"
+description: "Request a new Azure resource to be added to the spoke AKS deployment"
+title: "[Spoke Resource] "
+labels: ["spoke", "infrastructure", "copilot-generate"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Add a Resource to the Spoke AKS Deployment
+
+        Describe the Azure resource you need. Copilot will generate a `custom-*.tf` file
+        following the conventions in `.github/instructions/spoke-deploy.instructions.md`.
+
+  - type: input
+    id: resource_type
+    attributes:
+      label: Azure Resource Type
+      description: "The Azure resource you need (e.g., Cosmos DB, App Gateway, Redis Cache, SQL Database)"
+      placeholder: "Azure Cosmos DB"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: sku
+    attributes:
+      label: SKU / Tier
+      description: "Select the pricing tier or enter a custom SKU in the description"
+      options:
+        - "Use default/recommended"
+        - "Free"
+        - "Basic"
+        - "Standard"
+        - "Premium"
+        - "Other (specify in description)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: private_endpoint
+    attributes:
+      label: Private Endpoint Required?
+      description: "Should this resource use a private endpoint for network isolation?"
+      options:
+        - "Yes (Recommended)"
+        - "No"
+    validations:
+      required: true
+
+  - type: input
+    id: dns_zone
+    attributes:
+      label: Private DNS Zone
+      description: "The privatelink DNS zone for this resource (e.g., privatelink.documents.azure.com). Leave blank if unsure — Copilot will determine it."
+      placeholder: "privatelink.documents.azure.com"
+
+  - type: dropdown
+    id: rbac_needs
+    attributes:
+      label: AKS Identity Access
+      description: "Does AKS need access to this resource?"
+      options:
+        - "Yes — AKS workloads will consume this resource"
+        - "No — standalone resource"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Additional Details
+      description: "Describe any specific configuration requirements, naming preferences, capacity needs, or integration points with existing spoke resources."
+      placeholder: |
+        - Serverless mode
+        - SQL API
+        - 2 databases: orders, products
+        - Need read access from AKS pods via workload identity
+
+  - type: dropdown
+    id: diagnostics
+    attributes:
+      label: Diagnostic Logging
+      description: "Should logs be sent to the hub Log Analytics Workspace?"
+      options:
+        - "Yes (Recommended)"
+        - "No"
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        **What happens next:**
+        1. Copilot Coding Agent reads this issue + the spoke spec
+        2. Generates a `custom-*.tf` file following spoke conventions
+        3. Opens a PR linked to this issue
+        4. Human reviews and approves the PR
