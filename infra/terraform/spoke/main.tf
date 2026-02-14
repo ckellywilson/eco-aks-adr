@@ -333,7 +333,9 @@ module "aks_cluster" {
   tags             = local.common_tags
 
   depends_on = [
-    time_sleep.wait_for_rbac
+    time_sleep.wait_for_rbac,
+    azurerm_subnet_route_table_association.aks_nodes,
+    azurerm_subnet_network_security_group_association.aks_nodes
   ]
 }
 
