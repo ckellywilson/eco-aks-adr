@@ -306,26 +306,6 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks" {
       source_addresses  = local.allowed_source_addresses
       destination_fqdns = ["*.azurecr.io"]
     }
-
-    # TODO: Move to spoke rule collection group (priority >= 500) when spoke pipeline exists.
-    # This is a spoke-specific rule for AKS node bootstrapping.
-    # Per split ownership model (hub-deploy.instructions.md), spoke-specific rules
-    # should be owned by the spoke deployment targeting the hub's firewall_policy_id.
-    rule {
-      name = "ubuntu-package-repositories"
-      protocols {
-        type = "Http"
-        port = 80
-      }
-      source_addresses = local.allowed_source_addresses
-      destination_fqdns = [
-        "security.ubuntu.com",
-        "azure.archive.ubuntu.com",
-        "archive.ubuntu.com",
-        "changelogs.ubuntu.com",
-        "entropy.ubuntu.com"
-      ]
-    }
   }
 
   network_rule_collection {

@@ -1,13 +1,15 @@
-# Hub Infrastructure Deployment Pipeline
-# Deploys hub Terraform code per .github/instructions/hub-deploy.instructions.md
+# Spoke AKS Infrastructure Deployment Pipeline
+# Deploys spoke Terraform code per .github/instructions/spoke-deploy.instructions.md
 #
 # Prerequisites (one-time manual setup):
-#   1. Create ARM service connection 'azure-hub-prod' with Workload Identity Federation
+#   1. Create ARM service connection 'azure-spoke-prod' with Workload Identity Federation
 #      - App Registration → Federated Credential → ADO issuer
 #      - Grant: Contributor + Storage Blob Data Contributor on subscription
 #   2. Set pipeline secret variable ADMIN_SSH_PUBLIC_KEY in pipeline UI
-#      - Go to Pipelines → hub-deploy → Edit → Variables → New variable
+#      - Go to Pipelines → spoke-deploy → Edit → Variables → New variable
 #      - Name: ADMIN_SSH_PUBLIC_KEY, Value: <your-ssh-public-key>, Keep secret: ✓
+#
+# CRITICAL: Hub infrastructure must be deployed BEFORE spoke deployment
 
 trigger:
   branches:
@@ -15,14 +17,14 @@ trigger:
       - main
   paths:
     include:
-      - infra/terraform/hub/**
+      - infra/terraform/spoke/**
 
 pool:
   vmImage: 'ubuntu-latest'
 
 variables:
   - name: TF_WORKING_DIR
-    value: 'infra/terraform/hub'
+    value: 'infra/terraform/spoke'
   - name: ARM_USE_OIDC
     value: 'true'
   - name: TF_VAR_FILE
@@ -45,7 +47,7 @@ stages:
           - task: AzureCLI@2
             displayName: 'Terraform Init & Validate'
             inputs:
-              azureSubscription: 'azure-hub-prod'
+              azureSubscription: 'azure-spoke-prod'
               scriptType: 'bash'
               scriptLocation: 'inlineScript'
               addSpnToEnvironment: true
@@ -78,7 +80,7 @@ stages:
           - task: AzureCLI@2
             displayName: 'Terraform Plan'
             inputs:
-              azureSubscription: 'azure-hub-prod'
+              azureSubscription: 'azure-spoke-prod'
               scriptType: 'bash'
               scriptLocation: 'inlineScript'
               addSpnToEnvironment: true
@@ -122,7 +124,7 @@ stages:
           - task: AzureCLI@2
             displayName: 'Terraform Apply'
             inputs:
-              azureSubscription: 'azure-hub-prod'
+              azureSubscription: 'azure-spoke-prod'
               scriptType: 'bash'
               scriptLocation: 'inlineScript'
               addSpnToEnvironment: true
@@ -137,3 +139,32 @@ stages:
 
                 terraform init -backend-config=$(BACKEND_CONFIG)
                 terraform apply -input=false $(Pipeline.Workspace)/tfplan/tfplan
+
+          - task: AzureCLI@2
+            displayName: 'Output Infrastructure Details'
+            inputs:
+              azureSubscription: 'azure-spoke-prod'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
+              inlineScript: |
+                export ARM_CLIENT_ID=$servicePrincipalId
+                export ARM_TENANT_ID=$tenantId
+                export ARM_OIDC_TOKEN=$idToken
+                export ARM_USE_OIDC=true
+                export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+
+                cd $(TF_WORKING_DIR)
+
+                terraform init -backend-config=$(BACKEND_CONFIG)
+                
+                echo "=== Spoke Infrastructure Outputs ==="
+                terraform output -json
+                
+                echo ""
+                echo "=== Post-Deployment Steps ==="
+                echo "1. Apply NGINX internal controller manifest:"
+                echo "   kubectl apply -f manifests/nginx-internal-controller.yaml"
+                echo ""
+                echo "2. Verify AKS cluster access from jump box"
+                echo "3. See README.md for complete post-deployment checklist"

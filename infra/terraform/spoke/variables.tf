@@ -21,15 +21,10 @@ variable "location_code" {
   default     = "eus2"
 }
 
-variable "resource_group_name" {
-  description = "Name of the spoke resource group"
+variable "spoke_key" {
+  description = "Key in the hub's spoke_vnets map that identifies this spoke (e.g., 'spoke-aks-prod')"
   type        = string
-}
-
-variable "spoke_vnet_address_space" {
-  description = "Spoke VNet address space"
-  type        = list(string)
-  default     = ["10.1.0.0/16"]
+  default     = "spoke-aks-prod"
 }
 
 variable "aks_cluster_name" {
@@ -155,23 +150,6 @@ variable "nginx_internal_lb_ip" {
     condition     = can(regex("^10\\.1\\.[0-3]\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$", var.nginx_internal_lb_ip))
     error_message = "The nginx_internal_lb_ip must be a valid IPv4 address within the AKS nodes subnet range 10.1.0.0/22."
   }
-}
-
-variable "hub_resource_group_name" {
-  description = "Hub resource group name for data source"
-  type        = string
-}
-
-variable "hub_name" {
-  description = "Hub name (for reading outputs)"
-  type        = string
-  default     = "hub"
-}
-
-variable "custom_dns_servers" {
-  description = "Custom DNS servers (fallback if hub outputs not available)"
-  type        = list(string)
-  default     = []
 }
 
 variable "admin_username" {

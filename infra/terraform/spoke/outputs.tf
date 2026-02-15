@@ -1,29 +1,32 @@
-output "resource_group_id" {
-  description = "Spoke resource group ID"
-  value       = azurerm_resource_group.aks_spoke.id
+output "resource_group_name" {
+  description = "Spoke resource group name"
+  value       = local.spoke_rg_name
 }
 
 output "spoke_vnet_id" {
   description = "Spoke VNet resource ID"
-  value       = module.spoke_vnet.resource_id
+  value       = local.spoke_vnet_id
 }
 
 output "spoke_vnet_name" {
   description = "Spoke VNet name"
-  value       = module.spoke_vnet.name
-}
-
-output "spoke_vnet_address_space" {
-  description = "Spoke VNet address space"
-  value       = module.spoke_vnet.address_spaces
+  value       = local.spoke_vnet_name
 }
 
 output "spoke_subnets" {
   description = "Spoke VNet subnets"
   value = {
-    for name, subnet in module.spoke_vnet.subnets : name => {
-      id               = subnet.resource_id
-      address_prefixes = subnet.address_prefixes
+    aks_nodes = {
+      id               = azurerm_subnet.aks_nodes.id
+      address_prefixes = azurerm_subnet.aks_nodes.address_prefixes
+    }
+    aks_system = {
+      id               = azurerm_subnet.aks_system.id
+      address_prefixes = azurerm_subnet.aks_system.address_prefixes
+    }
+    management = {
+      id               = azurerm_subnet.management.id
+      address_prefixes = azurerm_subnet.management.address_prefixes
     }
   }
 }
@@ -84,6 +87,11 @@ output "acr_name" {
   value       = module.acr.name
 }
 
+output "acr_login_server" {
+  description = "Azure Container Registry login server FQDN"
+  value       = module.acr.login_server
+}
+
 output "key_vault_id" {
   description = "Key Vault resource ID"
   value       = module.key_vault.resource_id
@@ -92,6 +100,11 @@ output "key_vault_id" {
 output "key_vault_name" {
   description = "Key Vault name"
   value       = module.key_vault.name
+}
+
+output "key_vault_uri" {
+  description = "Key Vault URI for application secret access"
+  value       = module.key_vault.vault_uri
 }
 
 output "spoke_jumpbox_private_ip" {

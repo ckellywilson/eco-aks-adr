@@ -1,14 +1,46 @@
-resource "azurerm_resource_group" "aks_spoke" {
-  name     = var.resource_group_name
-  location = var.location
+# Spoke subnets — created in the hub-managed VNet
+# The hub creates the VNet; the spoke adds application-specific subnets
+resource "azurerm_subnet" "aks_nodes" {
+  name                 = "aks-nodes"
+  resource_group_name  = local.spoke_rg_name
+  virtual_network_name = local.spoke_vnet_name
+  address_prefixes     = ["10.1.0.0/22"]
+}
 
-  tags = local.common_tags
+resource "azurerm_subnet" "aks_system" {
+  name                 = "aks-system"
+  resource_group_name  = local.spoke_rg_name
+  virtual_network_name = local.spoke_vnet_name
+  address_prefixes     = ["10.1.4.0/24"]
+}
+
+resource "azurerm_subnet" "management" {
+  name                 = "management"
+  resource_group_name  = local.spoke_rg_name
+  virtual_network_name = local.spoke_vnet_name
+  address_prefixes     = ["10.1.5.0/24"]
+}
+
+# Associate route table with AKS node subnets (required for userDefinedRouting)
+resource "azurerm_subnet_route_table_association" "aks_nodes" {
+  subnet_id      = azurerm_subnet.aks_nodes.id
+  route_table_id = azurerm_route_table.spoke.id
+}
+
+resource "azurerm_subnet_route_table_association" "aks_system" {
+  subnet_id      = azurerm_subnet.aks_system.id
+  route_table_id = azurerm_route_table.spoke.id
+}
+
+resource "azurerm_subnet_network_security_group_association" "aks_nodes" {
+  subnet_id                 = azurerm_subnet.aks_nodes.id
+  network_security_group_id = azurerm_network_security_group.aks_nodes.id
 }
 
 # User-assigned managed identities
 resource "azurerm_user_assigned_identity" "aks_control_plane" {
   name                = "uami-aks-cp-${var.environment}-${local.location_code}"
-  resource_group_name = azurerm_resource_group.aks_spoke.name
+  resource_group_name = local.spoke_rg_name
   location            = var.location
 
   tags = local.common_tags
@@ -16,7 +48,7 @@ resource "azurerm_user_assigned_identity" "aks_control_plane" {
 
 resource "azurerm_user_assigned_identity" "aks_kubelet" {
   name                = "uami-aks-kubelet-${var.environment}-${local.location_code}"
-  resource_group_name = azurerm_resource_group.aks_spoke.name
+  resource_group_name = local.spoke_rg_name
   location            = var.location
 
   tags = local.common_tags
@@ -32,7 +64,7 @@ resource "azurerm_role_assignment" "control_plane_to_kubelet" {
 # Grant control plane identity "Network Contributor" role on spoke VNet
 # Required for AKS to manage network resources (load balancers, NICs, etc.)
 resource "azurerm_role_assignment" "control_plane_to_vnet" {
-  scope                = module.spoke_vnet.resource_id
+  scope                = local.spoke_vnet_id
   role_definition_name = "Network Contributor"
   principal_id         = azurerm_user_assigned_identity.aks_control_plane.principal_id
 }
@@ -57,59 +89,14 @@ resource "time_sleep" "wait_for_rbac" {
   create_duration = "90s"
 }
 
-# Spoke VNet with subnets
-module "spoke_vnet" {
-  source  = "Azure/avm-res-network-virtualnetwork/azurerm"
-  version = "~> 0.4"
-
-  name      = "vnet-aks-${var.environment}-${local.location_code}"
-  parent_id = azurerm_resource_group.aks_spoke.id
-  location  = var.location
-
-  address_space = var.spoke_vnet_address_space
-
-  # Point to hub DNS Resolver inbound endpoint
-  dns_servers = try(
-    { dns_servers = [local.hub_outputs.dns_resolver_inbound_ip] },
-    var.custom_dns_servers != null ? { dns_servers = var.custom_dns_servers } : null,
-    null
-  )
-
-  subnets = local.subnet_config
-
-  enable_telemetry = true
-  tags             = local.common_tags
-}
-
 # Spoke VNet DNS zone link REMOVED — not required for peering-only architecture.
-# The spoke VNet uses custom DNS pointing to the hub DNS resolver inbound endpoint.
-# The hub resolver's VNet is linked to all private DNS zones, so the spoke resolves
-# private endpoints through the resolver chain without needing direct zone links.
-#
-# History: A spoke VNet link was previously added here while debugging an AKS
-# deployment failure. The actual root causes were:
-#   1. Wrong AVM property name ("private_dns_zone_id" instead of "private_dns_zone")
-#      in api_server_access_profile
-#   2. AKS nodes couldn't reach Ubuntu package repos through Azure Firewall for
-#      container image validation (firewall egress rules)
-# Neither issue was DNS zone linking. Once the property name and firewall rules
-# were corrected, the spoke VNet link was unnecessary.
-#
-# If AKS node bootstrap DNS resolution fails in future deployments, re-add:
-#   resource "azurerm_private_dns_zone_virtual_network_link" "aks_private_dns_spoke_link" {
-#     name                  = "link-privatelink.${var.location}.azmk8s.io-spoke"
-#     resource_group_name   = var.hub_resource_group_name
-#     private_dns_zone_name = "privatelink.${var.location}.azmk8s.io"
-#     virtual_network_id    = module.spoke_vnet.resource_id
-#     registration_enabled  = false
-#   }
-# Reference: https://learn.microsoft.com/en-us/azure/aks/private-clusters#hub-and-spoke-with-custom-dns-for-private-aks-clusters
+# See spoke-deploy.instructions.md and hub-deploy.instructions.md for DNS architecture details.
 
 # Route table for spoke with UDR to hub firewall
 resource "azurerm_route_table" "spoke" {
   name                = "rt-spoke-${var.environment}-${local.location_code}"
   location            = var.location
-  resource_group_name = azurerm_resource_group.aks_spoke.name
+  resource_group_name = local.spoke_rg_name
 
   tags = local.common_tags
 }
@@ -117,7 +104,7 @@ resource "azurerm_route_table" "spoke" {
 # Default route to hub firewall (0.0.0.0/0 -> Firewall Private IP)
 resource "azurerm_route" "default_route" {
   name                   = "route-default-to-firewall"
-  resource_group_name    = azurerm_resource_group.aks_spoke.name
+  resource_group_name    = local.spoke_rg_name
   route_table_name       = azurerm_route_table.spoke.name
   address_prefix         = "0.0.0.0/0"
   next_hop_type          = "VirtualAppliance"
@@ -128,7 +115,7 @@ resource "azurerm_route" "default_route" {
 resource "azurerm_network_security_group" "aks_nodes" {
   name                = "nsg-aks-nodes-${var.environment}-${local.location_code}"
   location            = var.location
-  resource_group_name = azurerm_resource_group.aks_spoke.name
+  resource_group_name = local.spoke_rg_name
 
   security_rule {
     name                       = "AllowIntraSubnet"
@@ -228,7 +215,7 @@ module "aks_cluster" {
 
   name      = var.aks_cluster_name
   location  = var.location
-  parent_id = azurerm_resource_group.aks_spoke.id
+  parent_id = data.azurerm_resource_group.spoke.id
 
   # Cluster configuration
   kubernetes_version = var.kubernetes_version
@@ -247,7 +234,7 @@ module "aks_cluster" {
     name                   = "system"
     vm_size                = var.system_node_pool_size
     count_of               = var.system_node_pool_count
-    vnet_subnet_id         = module.spoke_vnet.subnets["aks_nodes"].resource_id
+    vnet_subnet_id         = azurerm_subnet.aks_system.id
     enable_auto_scaling    = false
     os_disk_size_gb        = 30
     os_type                = "Linux"
@@ -335,7 +322,7 @@ module "aks_cluster" {
       name                   = "user"
       vm_size                = var.user_node_pool_size
       count_of               = var.user_node_pool_count
-      vnet_subnet_id         = module.spoke_vnet.subnets["aks_nodes"].resource_id
+      vnet_subnet_id         = azurerm_subnet.aks_nodes.id
       enable_auto_scaling    = false
       mode                   = "User"
       os_disk_size_gb        = 30
@@ -351,7 +338,11 @@ module "aks_cluster" {
   tags             = local.common_tags
 
   depends_on = [
-    time_sleep.wait_for_rbac
+    time_sleep.wait_for_rbac,
+    azurerm_subnet_route_table_association.aks_nodes,
+    azurerm_subnet_route_table_association.aks_system,
+    azurerm_subnet_network_security_group_association.aks_nodes,
+    azurerm_firewall_policy_rule_collection_group.spoke
   ]
 }
 
@@ -365,7 +356,7 @@ module "acr" {
 
   name                = "acr${var.environment}${local.location_code}${random_string.acr_suffix.result}"
   location            = var.location
-  resource_group_name = azurerm_resource_group.aks_spoke.name
+  resource_group_name = local.spoke_rg_name
 
   sku = "Premium" # Required for private endpoints
 
@@ -373,7 +364,7 @@ module "acr" {
   private_endpoints = length(local.hub_outputs.private_dns_zone_ids) > 0 ? {
     acr_private_endpoint = {
       name                            = "pe-acr-${var.environment}-${local.location_code}"
-      subnet_resource_id              = module.spoke_vnet.subnets["management"].resource_id
+      subnet_resource_id              = azurerm_subnet.management.id
       private_dns_zone_resource_ids   = [local.hub_outputs.private_dns_zone_ids["privatelink.azurecr.io"]]
       private_service_connection_name = "psc-acr-${var.environment}-${local.location_code}"
     }
@@ -407,7 +398,7 @@ module "key_vault" {
 
   name                = "kv-${var.environment}-${local.location_code}-${random_string.kv_suffix.result}"
   location            = var.location
-  resource_group_name = azurerm_resource_group.aks_spoke.name
+  resource_group_name = local.spoke_rg_name
   tenant_id           = data.azurerm_client_config.current.tenant_id
 
   sku_name = "standard"
@@ -430,7 +421,7 @@ module "key_vault" {
   private_endpoints = length(local.hub_outputs.private_dns_zone_ids) > 0 ? {
     kv_private_endpoint = {
       name                            = "pe-kv-${var.environment}-${local.location_code}"
-      subnet_resource_id              = module.spoke_vnet.subnets["management"].resource_id
+      subnet_resource_id              = azurerm_subnet.management.id
       private_dns_zone_resource_ids   = [local.hub_outputs.private_dns_zone_ids["privatelink.vaultcore.azure.net"]]
       private_service_connection_name = "psc-kv-${var.environment}-${local.location_code}"
     }
@@ -463,11 +454,11 @@ data "azurerm_client_config" "current" {}
 resource "azurerm_network_interface" "spoke_jumpbox" {
   name                = "nic-jumpbox-spoke-${var.location_code}-${var.environment}"
   location            = var.location
-  resource_group_name = azurerm_resource_group.aks_spoke.name
+  resource_group_name = local.spoke_rg_name
 
   ip_configuration {
     name                          = "internal"
-    subnet_id                     = module.spoke_vnet.subnets["management"].resource_id
+    subnet_id                     = azurerm_subnet.management.id
     private_ip_address_allocation = "Dynamic"
   }
 
@@ -477,7 +468,7 @@ resource "azurerm_network_interface" "spoke_jumpbox" {
 resource "azurerm_linux_virtual_machine" "spoke_jumpbox" {
   name                = "vm-jumpbox-spoke-${var.location_code}-${var.environment}"
   location            = var.location
-  resource_group_name = azurerm_resource_group.aks_spoke.name
+  resource_group_name = local.spoke_rg_name
   size                = "Standard_D2s_v3"
   admin_username      = var.admin_username
 
@@ -615,5 +606,56 @@ resource "azurerm_monitor_diagnostic_setting" "aks" {
 
   enabled_metric {
     category = "AllMetrics"
+  }
+}
+
+# ===========================
+# Spoke Firewall Rules
+# ===========================
+
+# Spoke-specific firewall rule collection group (priority ≥ 500)
+# Hub owns baseline rules (100-499); spoke owns application-specific rules
+resource "azurerm_firewall_policy_rule_collection_group" "spoke" {
+  count              = local.hub_outputs.firewall_policy_id != null ? 1 : 0
+  name               = "spoke-aks-${var.environment}"
+  firewall_policy_id = local.hub_outputs.firewall_policy_id
+  priority           = 500
+
+  # Spoke-specific Ubuntu package repositories
+  # These support jump box and any Ubuntu-based workloads
+  application_rule_collection {
+    name     = "spoke-ubuntu-packages"
+    priority = 510
+    action   = "Allow"
+
+    rule {
+      name = "ubuntu-package-repositories"
+      protocols {
+        type = "Http"
+        port = 80
+      }
+      source_addresses = [
+        local.spoke_vnet_cidr
+      ]
+      destination_fqdns = [
+        "security.ubuntu.com",
+        "azure.archive.ubuntu.com",
+        "changelogs.ubuntu.com"
+      ]
+    }
+
+    rule {
+      name = "ubuntu-snapshot-service"
+      protocols {
+        type = "Https"
+        port = 443
+      }
+      source_addresses = [
+        local.spoke_vnet_cidr
+      ]
+      destination_fqdns = [
+        "snapshot.ubuntu.com"
+      ]
+    }
   }
 }
