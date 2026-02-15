@@ -231,13 +231,13 @@ module "aks_cluster" {
 
   # Default agent pool (system pool)
   default_agent_pool = {
-    name                   = "system"
-    vm_size                = var.system_node_pool_size
-    count_of               = var.system_node_pool_count
-    vnet_subnet_id         = azurerm_subnet.aks_system.id
-    enable_auto_scaling    = false
-    os_disk_size_gb        = 30
-    os_type                = "Linux"
+    name                      = "system"
+    vm_size                   = var.system_node_pool_size
+    count_of                  = var.system_node_pool_count
+    vnet_subnet_id            = azurerm_subnet.aks_system.id
+    enable_auto_scaling       = false
+    os_disk_size_gb           = 30
+    os_type                   = "Linux"
     enable_encryption_at_host = true
   }
 
@@ -319,14 +319,14 @@ module "aks_cluster" {
   # Additional agent pools
   agent_pools = {
     user = {
-      name                   = "user"
-      vm_size                = var.user_node_pool_size
-      count_of               = var.user_node_pool_count
-      vnet_subnet_id         = azurerm_subnet.aks_nodes.id
-      enable_auto_scaling    = false
-      mode                   = "User"
-      os_disk_size_gb        = 30
-      os_type                = "Linux"
+      name                      = "user"
+      vm_size                   = var.user_node_pool_size
+      count_of                  = var.user_node_pool_count
+      vnet_subnet_id            = azurerm_subnet.aks_nodes.id
+      enable_auto_scaling       = false
+      mode                      = "User"
+      os_disk_size_gb           = 30
+      os_type                   = "Linux"
       enable_encryption_at_host = true
       node_labels = {
         workload = "user"
