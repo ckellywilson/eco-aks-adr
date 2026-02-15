@@ -7,7 +7,8 @@
 #
 # What this script does:
 #   1. Creates an Azure AD App Registration + Service Principal
-#   2. Grants RBAC roles (Contributor + Storage Blob Data Contributor)
+#   2. Grants RBAC roles (Contributor + Storage Blob Data Contributor,
+#      plus User Access Administrator for spoke pipelines)
 #   3. Creates an ADO service connection (Workload Identity Federation)
 #   4. Creates a federated credential on the App Registration
 #   5. Grants all pipelines access to the service connection
@@ -180,7 +181,18 @@ grant_rbac() {
 
   local scope="/subscriptions/$AZURE_SUBSCRIPTION_ID"
 
-  for role in "Contributor" "Storage Blob Data Contributor"; do
+  # Base roles for all pipelines (hub + spoke)
+  local roles=("Contributor" "Storage Blob Data Contributor")
+
+  # Spoke pipelines create azurerm_role_assignment resources (e.g., AKS UAMI → DNS zone,
+  # kubelet → AcrPull, control plane → Key Vault). This requires
+  # Microsoft.Authorization/roleAssignments/write, which Contributor does not include.
+  if [[ "$PIPELINE_NAME" == *spoke* ]]; then
+    roles+=("User Access Administrator")
+    log "  Spoke pipeline detected — adding User Access Administrator role"
+  fi
+
+  for role in "${roles[@]}"; do
     local existing_role
     existing_role=$(az role assignment list --assignee "$SP_OBJECT_ID" --role "$role" --scope "$scope" --query "length(@)" -o tsv 2>/dev/null || echo "0")
     if [[ "$existing_role" -gt 0 ]]; then

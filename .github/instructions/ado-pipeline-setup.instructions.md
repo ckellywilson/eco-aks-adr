@@ -108,6 +108,18 @@ az role assignment create \
 
 **Why Storage Blob Data Contributor?** Terraform backend uses Azure AD auth (`use_azuread_auth = true` in `.tfbackend`) to read/write state blobs. This role is required alongside Contributor.
 
+**Spoke service principal only** — also requires `User Access Administrator`:
+
+```bash
+az role assignment create \
+  --assignee-object-id <sp-object-id> \
+  --assignee-principal-type ServicePrincipal \
+  --role "User Access Administrator" \
+  --scope "/subscriptions/<subscription-id>"
+```
+
+**Why User Access Administrator?** The spoke Terraform creates `azurerm_role_assignment` resources (e.g., AKS control plane → Private DNS Zone Contributor, kubelet → AcrPull, control plane → Key Vault Secrets User). Writing role assignments requires `Microsoft.Authorization/roleAssignments/write`, which `Contributor` does not include. The hub service principal does NOT need this role since it creates no role assignments.
+
 #### Step 3: Create ADO Service Connection
 
 In ADO Portal: **Project Settings → Service connections → New → Azure Resource Manager → Workload Identity Federation (Manual)**
