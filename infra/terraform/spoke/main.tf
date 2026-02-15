@@ -238,7 +238,7 @@ module "aks_cluster" {
     enable_auto_scaling    = false
     os_disk_size_gb        = 30
     os_type                = "Linux"
-    enable_host_encryption = true # Enable host-based encryption
+    enable_encryption_at_host = true
   }
 
   # Network profile
@@ -327,7 +327,7 @@ module "aks_cluster" {
       mode                   = "User"
       os_disk_size_gb        = 30
       os_type                = "Linux"
-      enable_host_encryption = true # Enable host-based encryption
+      enable_encryption_at_host = true
       node_labels = {
         workload = "user"
       }
