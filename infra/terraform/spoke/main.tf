@@ -234,7 +234,7 @@ module "aks_cluster" {
     name                   = "system"
     vm_size                = var.system_node_pool_size
     count_of               = var.system_node_pool_count
-    vnet_subnet_id         = azurerm_subnet.aks_nodes.id
+    vnet_subnet_id         = azurerm_subnet.aks_system.id
     enable_auto_scaling    = false
     os_disk_size_gb        = 30
     os_type                = "Linux"
@@ -341,7 +341,8 @@ module "aks_cluster" {
     time_sleep.wait_for_rbac,
     azurerm_subnet_route_table_association.aks_nodes,
     azurerm_subnet_route_table_association.aks_system,
-    azurerm_subnet_network_security_group_association.aks_nodes
+    azurerm_subnet_network_security_group_association.aks_nodes,
+    azurerm_firewall_policy_rule_collection_group.spoke
   ]
 }
 
@@ -634,7 +635,7 @@ resource "azurerm_firewall_policy_rule_collection_group" "spoke" {
         port = 80
       }
       source_addresses = [
-        "10.1.0.0/16" # Spoke VNet CIDR
+        local.spoke_vnet_cidr
       ]
       destination_fqdns = [
         "security.ubuntu.com",
@@ -650,33 +651,10 @@ resource "azurerm_firewall_policy_rule_collection_group" "spoke" {
         port = 443
       }
       source_addresses = [
-        "10.1.0.0/16" # Spoke VNet CIDR
+        local.spoke_vnet_cidr
       ]
       destination_fqdns = [
         "snapshot.ubuntu.com"
-      ]
-    }
-  }
-
-  # Placeholder for spoke-specific application rules
-  # Add custom FQDNs as needed for workload requirements
-  application_rule_collection {
-    name     = "spoke-application-rules"
-    priority = 520
-    action   = "Allow"
-
-    rule {
-      name = "placeholder"
-      protocols {
-        type = "Https"
-        port = 443
-      }
-      source_addresses = [
-        "10.1.0.0/16" # Spoke VNet CIDR
-      ]
-      destination_fqdns = [
-        # TODO: Replace with actual application FQDNs
-        "example.com"
       ]
     }
   }

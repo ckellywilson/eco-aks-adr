@@ -722,25 +722,37 @@ The spoke deployment creates its own firewall rule collection group on the hub's
   - azure.archive.ubuntu.com (HTTP:80)
   - changelogs.ubuntu.com (HTTP:80)
   - snapshot.ubuntu.com (HTTPS:443)
-- **Placeholder application rule collection** - Ready for custom application FQDNs
 
 **Adding custom application rules:**
 
-Edit `main.tf` and add FQDNs to the `spoke-application-rules` collection:
+Add a new `application_rule_collection` to the `azurerm_firewall_policy_rule_collection_group.spoke` resource in `main.tf`:
 
 ```hcl
-destination_fqdns = [
-  "api.myapp.com",
-  "cdn.myapp.com",
-  "*.azurewebsites.net"
-]
+application_rule_collection {
+  name     = "spoke-application-rules"
+  priority = 520
+  action   = "Allow"
+
+  rule {
+    name = "custom-app-fqdns"
+    protocols {
+      type = "Https"
+      port = 443
+    }
+    source_addresses = [local.spoke_vnet_cidr]
+    destination_fqdns = [
+      "api.myapp.com",
+      "cdn.myapp.com"
+    ]
+  }
+}
 ```
 
 Then reapply Terraform:
 
 ```bash
 terraform plan -var-file="prod.tfvars"
-terraform apply
+terraform apply -var-file="prod.tfvars"
 ```
 
 **View firewall rules:**

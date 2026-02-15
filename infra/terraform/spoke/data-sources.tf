@@ -24,7 +24,7 @@ data "azurerm_resource_group" "spoke" {
 
 # Reference the hub-created spoke VNet (hub_managed = true)
 data "azurerm_virtual_network" "spoke" {
-  name                = local.hub_outputs.spoke_vnet_names[var.spoke_key]
+  name                = try(local.hub_outputs.spoke_vnet_names[var.spoke_key], "${var.spoke_key}-vnet")
   resource_group_name = data.azurerm_resource_group.spoke.name
 }
 
@@ -33,5 +33,6 @@ locals {
   spoke_rg_name       = data.azurerm_resource_group.spoke.name
   spoke_vnet_id       = local.hub_outputs.spoke_vnet_ids[var.spoke_key]
   spoke_vnet_name     = data.azurerm_virtual_network.spoke.name
+  spoke_vnet_cidr     = data.azurerm_virtual_network.spoke.address_space[0]
   firewall_private_ip = local.hub_outputs.firewall_private_ip
 }
