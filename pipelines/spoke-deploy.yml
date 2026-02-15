@@ -42,7 +42,7 @@ stages:
           - task: TerraformInstaller@1
             displayName: 'Install Terraform'
             inputs:
-              terraformVersion: '1.10.5'
+              terraformVersion: '1.14.5'
 
           - task: AzureCLI@2
             displayName: 'Terraform Init & Validate'
@@ -75,7 +75,7 @@ stages:
           - task: TerraformInstaller@1
             displayName: 'Install Terraform'
             inputs:
-              terraformVersion: '1.10.5'
+              terraformVersion: '1.14.5'
 
           - task: AzureCLI@2
             displayName: 'Terraform Plan'
@@ -115,7 +115,7 @@ stages:
           - task: TerraformInstaller@1
             displayName: 'Install Terraform'
             inputs:
-              terraformVersion: '1.10.5'
+              terraformVersion: '1.14.5'
 
           - download: current
             artifact: tfplan
