@@ -33,6 +33,10 @@ resource "azurerm_public_ip" "firewall" {
   sku                 = "Standard"
 
   tags = local.common_tags
+
+  lifecycle {
+    ignore_changes = [ip_tags]
+  }
 }
 
 # Azure Firewall
@@ -83,6 +87,10 @@ resource "azurerm_public_ip" "bastion" {
   sku                 = "Standard"
 
   tags = local.common_tags
+
+  lifecycle {
+    ignore_changes = [ip_tags]
+  }
 }
 
 # Azure Bastion
