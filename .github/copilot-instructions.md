@@ -15,6 +15,7 @@ Repository-wide instructions for GitHub Copilot agents. Path-specific guidance l
 - Reference issues/work items in commits: `Fixes #<issue-number>` or `AB#<work-item-id>`
 - Request Copilot review before merging PRs
 - **Copilot agents MUST create a feature branch** — never commit code changes directly to main
+- After merge: delete feature branch (local + remote) and pull main
 
 ### Administrative Tasks (Direct to Main)
 
