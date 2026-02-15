@@ -35,7 +35,7 @@ output "firewall_id" {
 
 output "firewall_private_ip" {
   description = "Azure Firewall private IP address"
-  value       = try(module.firewall[0].private_ip_addresses[0], null)
+  value       = try(module.firewall[0].resource.ip_configuration[0].private_ip_address, null)
 }
 
 output "firewall_public_ip" {
@@ -60,10 +60,8 @@ output "log_analytics_workspace_id" {
 
 output "log_analytics_workspace_name" {
   description = "Log Analytics workspace name"
-  value       = module.log_analytics.name
-  sensitive   = true
+  value       = "law-hub-${var.environment}-${local.location_code}"
 }
-
 output "private_dns_zone_ids" {
   description = "Map of private DNS zone names to IDs"
   value = {
