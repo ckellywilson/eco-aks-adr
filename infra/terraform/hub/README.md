@@ -21,7 +21,7 @@ This directory contains Terraform code for the hub infrastructure of the Azure A
 
 ## Prerequisites
 
-- Terraform 1.10.5 (pinned for production)
+- Terraform 1.14.5 (pinned for production)
 - Azure CLI >= 2.50
 - Appropriate Azure subscription permissions (Contributor role)
 - Storage account for remote state backend already configured
