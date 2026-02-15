@@ -34,5 +34,5 @@ locals {
   spoke_vnet_id       = local.hub_outputs.spoke_vnet_ids[var.spoke_key]
   spoke_vnet_name     = data.azurerm_virtual_network.spoke.name
   spoke_vnet_cidr     = data.azurerm_virtual_network.spoke.address_space[0]
-  firewall_private_ip = local.hub_outputs.firewall_private_ip
+  firewall_private_ip = try(local.hub_outputs.firewall_private_ip, null)
 }

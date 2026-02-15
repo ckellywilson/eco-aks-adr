@@ -30,12 +30,12 @@ output "hub_subnets" {
 
 output "firewall_id" {
   description = "Azure Firewall resource ID"
-  value       = try(module.firewall[0].firewall_id, null)
+  value       = try(module.firewall[0].resource_id, null)
 }
 
 output "firewall_private_ip" {
   description = "Azure Firewall private IP address"
-  value       = try(module.firewall[0].resource.ip_configurations[0].private_ip_address, try(module.firewall[0].firewall_private_ip, null))
+  value       = try(module.firewall[0].private_ip_addresses[0], null)
 }
 
 output "firewall_public_ip" {
@@ -50,7 +50,7 @@ output "firewall_policy_id" {
 
 output "bastion_id" {
   description = "Azure Bastion resource ID"
-  value       = try(module.bastion[0].bastion_id, null)
+  value       = try(module.bastion[0].resource_id, null)
 }
 
 output "log_analytics_workspace_id" {
@@ -60,7 +60,7 @@ output "log_analytics_workspace_id" {
 
 output "log_analytics_workspace_name" {
   description = "Log Analytics workspace name"
-  value       = module.log_analytics.resource.name
+  value       = module.log_analytics.name
   sensitive   = true
 }
 
