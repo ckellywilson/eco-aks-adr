@@ -25,6 +25,8 @@ pool:
 variables:
   - name: TF_WORKING_DIR
     value: 'infra/terraform/spoke'
+  - name: ENVIRONMENT
+    value: 'prod'
   - name: ARM_USE_OIDC
     value: 'true'
   - name: TF_VAR_FILE
@@ -184,12 +186,12 @@ stages:
                 export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
 
                 chmod +x scripts/validate-networking.sh
-                ./scripts/validate-networking.sh prod --mode=infra
+                ./scripts/validate-networking.sh $(ENVIRONMENT) --mode=infra
 
           - script: |
               echo "=== Manual Validation (from jump box via Bastion) ==="
               echo "Connect to spoke jump box, then run:"
-              echo "  ./scripts/validate-networking.sh prod --mode=full"
+              echo "  ./scripts/validate-networking.sh $(ENVIRONMENT) --mode=full"
               echo ""
               echo "This validates DNS resolution, AKS connectivity,"
               echo "and in-cluster networking from within the private network."
