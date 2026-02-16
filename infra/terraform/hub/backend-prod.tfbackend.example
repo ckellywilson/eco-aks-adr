@@ -12,6 +12,10 @@
 #     -backend-config="container_name=tfstate-hub" \
 #     -backend-config="key=terraform.tfstate" \
 #     -backend-config="use_azuread_auth=true"
+#
+# NOTE: If migrating from a different container/key, use:
+#   terraform init -migrate-state -backend-config=backend-prod.tfbackend
+#   Or use -reconfigure to point to an existing state without migration.
 # ============================================================================
 
 # Azure resource group containing the Terraform state storage account

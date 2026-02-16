@@ -1,10 +1,10 @@
 # CI/CD Landing Zone Production Environment Variables
 # ============================================================================
 # INSTRUCTIONS:
-# 1. Copy this file to prod.tfvars (which is gitignored)
+# 1. Copy this file to prod.tfvars and commit it to version control
 # 2. Replace placeholder values with your actual configuration
-#
-# NEVER commit actual tfvars files to version control
+# 3. KEEP THIS FILE SANITIZED: do not put secrets or credentials here
+#    Store secrets in pipeline variables and/or Azure Key Vault instead
 # ============================================================================
 
 # Azure subscription ID

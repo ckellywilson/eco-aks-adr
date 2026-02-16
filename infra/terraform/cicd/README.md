@@ -6,8 +6,8 @@ Self-hosted ACI-based Azure DevOps pipeline agents deployed in a dedicated landi
 
 | Item | Value |
 |------|-------|
-| **Spec** | [`.github/instructions/cicd-deploy.instructions.md`](../../.github/instructions/cicd-deploy.instructions.md) |
-| **Pipeline** | [`pipelines/cicd-deploy.yml`](../../pipelines/cicd-deploy.yml) |
+| **Spec** | [`.github/instructions/cicd-deploy.instructions.md`](../../../.github/instructions/cicd-deploy.instructions.md) |
+| **Pipeline** | [`pipelines/cicd-deploy.yml`](../../../pipelines/cicd-deploy.yml) |
 | **VNet CIDR** | `10.2.0.0/24` (hub-managed) |
 | **Hub dependency** | Deploys AFTER hub, reads hub remote state |
 | **Agent type** | ACI containers via [AVM CI/CD Agents module](https://registry.terraform.io/modules/Azure/avm-ptn-cicd-agents-and-runners/azurerm/latest) |
@@ -32,4 +32,4 @@ terraform apply
 
 ## Architecture
 
-See the [CI/CD spec](../../.github/instructions/cicd-deploy.instructions.md) for full architecture documentation.
+See the [CI/CD spec](../../../.github/instructions/cicd-deploy.instructions.md) for full architecture documentation.

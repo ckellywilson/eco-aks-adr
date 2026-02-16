@@ -31,8 +31,6 @@ variables:
     value: 'prod.tfvars'
   - name: BACKEND_CONFIG
     value: 'backend-prod.tfbackend'
-  - name: ADO_AGENT_POOL_NAME
-    value: 'aci-cicd-pool'
 
 stages:
   - stage: Validate
@@ -142,13 +140,15 @@ stages:
                 terraform apply -input=false $(Pipeline.Workspace)/tfplan/tfplan
 
           - script: |
+              cd $(TF_WORKING_DIR)
+              POOL_NAME=$(terraform output -raw agent_pool_name)
               echo "=== Post-Deployment: Agent Pool Registration ==="
               echo "Register the UAMI in Azure DevOps:"
               echo "  1. Go to ADO → Organization Settings → Agent Pools"
-              echo "  2. Create pool '$(ADO_AGENT_POOL_NAME)' if it doesn't exist"
+              echo "  2. Create pool '${POOL_NAME}' if it doesn't exist"
               echo "  3. Register the UAMI client ID with the pool"
               echo ""
               echo "Once agents are registered, update spoke-deploy.yml pool to:"
               echo "  pool:"
-              echo "    name: '$(ADO_AGENT_POOL_NAME)'"
+              echo "    name: '${POOL_NAME}'"
             displayName: 'Print Agent Registration Instructions'
