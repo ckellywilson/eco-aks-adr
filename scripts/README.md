@@ -54,7 +54,7 @@ Unified validation script for hub and spoke infrastructure, DNS resolution, AKS 
 
 | Section | Description | Mode |
 |---------|-------------|------|
-| 1. Pre-flight | az, jq, kubectl availability, Azure login | Both |
+| 1. Pre-flight | az, jq availability, Azure login (kubectl in full mode only) | Both |
 | 2. Hub Infrastructure | RG, VNet, Firewall, DNS Resolver, DNS zones, Log Analytics | Both |
 | 3. Spoke Infrastructure | RG, VNet, DNS config, peering, AKS config, ACR, KV | Both |
 | 4. DNS Resolution | nslookup for AKS API, ACR, KV private endpoints | Full only |

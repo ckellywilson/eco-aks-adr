@@ -18,6 +18,17 @@ resource "azurerm_user_assigned_identity" "cicd_agents" {
   location            = var.location
 
   tags = local.common_tags
+
+  lifecycle {
+    precondition {
+      condition     = var.ado_organization_url != ""
+      error_message = "When deploy_cicd_agents is true, ado_organization_url must be set to a non-empty Azure DevOps organization URL."
+    }
+    precondition {
+      condition     = var.aci_agent_count > 0
+      error_message = "When deploy_cicd_agents is true, aci_agent_count must be greater than 0."
+    }
+  }
 }
 
 # Grant ACI agents read access to platform KV (SSH keys, platform secrets)

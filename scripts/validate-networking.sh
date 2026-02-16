@@ -104,13 +104,10 @@ if [[ -n "${HUB_RG_OVERRIDE:-}" ]]; then
   HUB_RG="$HUB_RG_OVERRIDE"
   log_info "Using overridden hub resource group: $HUB_RG"
 else
-  HUB_RG=$(az group list --query "[?starts_with(name, 'rg-hub-')].name | [0]" -o tsv 2>/dev/null || true)
-  if [[ -z "$HUB_RG" || "$HUB_RG" == "null" ]]; then
-    HUB_RG="rg-hub-eus2-${ENVIRONMENT}"
-    log_warning "Could not auto-discover hub resource group. Falling back to: $HUB_RG"
-  else
-    log_info "Auto-discovered hub resource group: $HUB_RG"
-  fi
+  # Derive expected hub RG from ENVIRONMENT and location code
+  HUB_LOCATION_CODE="${HUB_LOCATION_CODE:-eus2}"
+  HUB_RG="rg-hub-${HUB_LOCATION_CODE}-${ENVIRONMENT}"
+  log_info "Using derived hub resource group: $HUB_RG (HUB_LOCATION_CODE=${HUB_LOCATION_CODE})"
 fi
 
 if az group show -n "$HUB_RG" &> /dev/null; then
@@ -371,7 +368,7 @@ else
         NODE_COUNT=$(kubectl get nodes --no-headers | wc -l)
         log_success "kubectl connected to cluster ($NODE_COUNT nodes)"
 
-        NOT_READY=$(kubectl get nodes --no-headers | grep -cv "Ready" || true)
+        NOT_READY=$(kubectl get nodes --no-headers | awk '$2 != "Ready" {count++} END {print count+0}')
         if [[ "$NOT_READY" -eq 0 ]]; then
           log_success "All nodes are Ready"
         else

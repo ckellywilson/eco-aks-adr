@@ -114,10 +114,16 @@ preflight() {
   fi
 
   # Determine repo type from URL
-  if echo "$REPO_URL" | grep -qE '(dev\.azure\.com|visualstudio\.com)'; then
+  if echo "$REPO_URL" | grep -qE '(dev\.azure\.com|visualstudio\.com|ssh\.dev\.azure\.com)'; then
     REPO_TYPE="TfsGit"
-    # Extract ADO Git repo name: last segment before .git or end
-    REPO_NAME=$(echo "$REPO_URL" | sed -E 's|.*/_git/([^/]+)(\.git)?$|\1|')
+    # Extract ADO Git repo name from HTTPS (/_git/repo) or SSH (v3/org/project/repo)
+    if echo "$REPO_URL" | grep -qE '/_git/'; then
+      REPO_NAME=$(echo "$REPO_URL" | sed -E 's|.*/_git/([^/]+)(\.git)?$|\1|')
+    elif echo "$REPO_URL" | grep -qE 'ssh\.dev\.azure\.com'; then
+      REPO_NAME=$(echo "$REPO_URL" | sed -E 's|.*v3/[^/]+/[^/]+/([^/]+)(\.git)?$|\1|')
+    else
+      fail "Cannot parse ADO repository name from URL: $REPO_URL"
+    fi
     log "  Detected ADO Git repository: $REPO_NAME"
   elif echo "$REPO_URL" | grep -qE 'github\.com'; then
     REPO_TYPE="GitHub"
@@ -494,13 +500,14 @@ create_platform_kv() {
   local platform_rg="rg-platform-${LOCATION_CODE}-${ENVIRONMENT}"
   local kv_suffix
   if command -v md5sum &>/dev/null; then
-    kv_suffix=$(echo "$AZURE_SUBSCRIPTION_ID" | md5sum | cut -c1-8)
+    kv_suffix=$(echo "$AZURE_SUBSCRIPTION_ID" | md5sum | cut -c1-6)
   elif command -v md5 &>/dev/null; then
-    kv_suffix=$(echo "$AZURE_SUBSCRIPTION_ID" | md5 | cut -c1-8)
+    kv_suffix=$(echo "$AZURE_SUBSCRIPTION_ID" | md5 | cut -c1-6)
   else
     fail "Neither md5sum nor md5 command found for computing Key Vault suffix"
   fi
-  local kv_name="kv-platform-${LOCATION_CODE}-${kv_suffix}"
+  # Azure Key Vault names limited to 24 chars. kvp-<env3>-<loc>-<6hash> fits within limit.
+  local kv_name="kvp-${ENVIRONMENT:0:3}-${LOCATION_CODE}-${kv_suffix}"
 
   # Create platform resource group
   if az group show -n "$platform_rg" &> /dev/null; then
@@ -571,8 +578,8 @@ create_platform_kv() {
     tmpdir=$(mktemp -d)
     ssh-keygen -t ed25519 -f "$tmpdir/ssh-key" -N "" -C "aks-landing-zone-${ENVIRONMENT}" > /dev/null 2>&1
 
-    az keyvault secret set --vault-name "$kv_name" -n "ssh-public-key" --value "$(cat "$tmpdir/ssh-key.pub")" -o none
-    az keyvault secret set --vault-name "$kv_name" -n "ssh-private-key" --value "$(cat "$tmpdir/ssh-key")" -o none
+    az keyvault secret set --vault-name "$kv_name" -n "ssh-public-key" --file "$tmpdir/ssh-key.pub" -o none
+    az keyvault secret set --vault-name "$kv_name" -n "ssh-private-key" --file "$tmpdir/ssh-key" -o none
 
     rm -rf "$tmpdir"
     log "  Generated SSH key pair and stored in Key Vault"
