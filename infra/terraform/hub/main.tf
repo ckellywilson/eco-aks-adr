@@ -16,7 +16,7 @@ module "hub_vnet" {
 
   address_space = var.hub_vnet_address_space
 
-  subnets = local.subnet_config
+  subnets = local.all_subnet_config
 
   enable_telemetry = true
   tags             = local.common_tags
@@ -468,7 +468,7 @@ resource "azurerm_linux_virtual_machine" "hub_jumpbox" {
 
   admin_ssh_key {
     username   = var.admin_username
-    public_key = var.admin_ssh_public_key
+    public_key = data.azurerm_key_vault_secret.ssh_public_key.value
   }
 
   os_disk {

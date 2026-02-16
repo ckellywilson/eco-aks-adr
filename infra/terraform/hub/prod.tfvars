@@ -27,9 +27,10 @@ log_analytics_sku  = "PerGB2018"
 # Firewall availability zones (empty list = no zones, Standard SKU)
 firewall_availability_zones = []
 
-# SSH public key for VM access — set via pipeline secret variable ADMIN_SSH_PUBLIC_KEY
-# Local usage: terraform plan -var="admin_ssh_public_key=$(cat ~/.ssh/id_ed25519.pub)"
-# Pipeline:    terraform plan -var="admin_ssh_public_key=$(ADMIN_SSH_PUBLIC_KEY)"
+# SSH public key for VM access — stored in platform Key Vault
+# Created by setup-ado-pipeline.sh; read via data source in Terraform
+# Platform KV resource ID (set via pipeline or tfvars)
+# platform_key_vault_id = "<set-by-pipeline-or-manually>"
 
 # Spoke VNets — hub creates RG + VNet for hub_managed spokes
 spoke_vnets = {
@@ -43,6 +44,12 @@ spoke_vnets = {
 
 # Additional spoke address spaces not in spoke_vnets (usually empty)
 spoke_vnet_address_spaces = []
+
+# Self-hosted CI/CD agents (set to true after first deploy with Microsoft-hosted agents)
+deploy_cicd_agents = false
+# ado_organization_url = "https://dev.azure.com/myorg"
+# ado_agent_pool_name  = "aci-hub-pool"
+# aci_agent_count      = 2
 
 # Resource tags
 tags = {

@@ -39,9 +39,10 @@ enable_web_app_routing = true
 # Internal load balancer IP
 nginx_internal_lb_ip = "10.1.0.50"
 
-# SSH public key for VM access
-# Passed via ADO pipeline secret variable (ADMIN_SSH_PUBLIC_KEY)
-# admin_ssh_public_key = "<set via pipeline>"
+# SSH public key for VM access — stored in platform Key Vault
+# Created by setup-ado-pipeline.sh; read via data source in Terraform
+# Platform KV resource ID (set via pipeline or tfvars)
+# platform_key_vault_id = "<set-by-pipeline-or-manually>"
 
 # Resource tags
 tags = {

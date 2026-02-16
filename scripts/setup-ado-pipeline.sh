@@ -12,17 +12,23 @@
 #   3. Creates an ADO service connection (Workload Identity Federation)
 #   4. Creates a federated credential on the App Registration
 #   5. Grants all pipelines access to the service connection
-#   6. Creates the pipeline definition pointing to the GitHub repo
-#   7. Sets the agent pool and pipeline secret variable
+#   6. Creates the pipeline definition (GitHub or ADO Git — auto-detected)
+#   7. Creates platform RG + management Key Vault + SSH key pair
+#   8. Sets the agent pool and pipeline variables (PLATFORM_KV_ID)
 #
 # Prerequisites:
 #   - Azure CLI authenticated (`az login`)
 #   - ADO PAT with Build (Read & Execute), Code (Read), Work Items (Read) scopes
-#   - jq installed
+#   - jq, ssh-keygen, and curl installed
+#   - For GitHub repos: GitHub service connection in ADO project
 #
 # Usage:
 #   export AZURE_DEVOPS_PAT='<your-pat>'
 #   ./scripts/setup-ado-pipeline.sh
+#
+# Repository type is auto-detected from `git remote get-url origin`:
+#   - github.com URLs → GitHub pipeline definition
+#   - dev.azure.com / visualstudio.com URLs → ADO Git pipeline definition
 #
 # Reference: .github/instructions/ado-pipeline-setup.instructions.md
 # =============================================================================
@@ -33,13 +39,15 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 ADO_ORG="${ADO_ORG:-}"
 ADO_PROJECT="${ADO_PROJECT:-}"
-GITHUB_REPO="${GITHUB_REPO:-}"                  # e.g. "owner/repo"
+REPO_URL="${REPO_URL:-}"                        # Auto-detected from git remote
 AZURE_SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID:-}"
 AZURE_DEVOPS_PAT="${AZURE_DEVOPS_PAT:-}"
 PIPELINE_YAML_PATH="${PIPELINE_YAML_PATH:-pipelines/hub-deploy.yml}"
 SERVICE_CONNECTION_NAME="${SERVICE_CONNECTION_NAME:-azure-hub-prod}"
 PIPELINE_NAME="${PIPELINE_NAME:-hub-deploy}"
-SSH_PUBLIC_KEY="${SSH_PUBLIC_KEY:-}"              # Optional: set pipeline secret
+LOCATION="${LOCATION:-eastus2}"
+LOCATION_CODE="${LOCATION_CODE:-eus2}"
+ENVIRONMENT="${ENVIRONMENT:-prod}"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -83,6 +91,7 @@ preflight() {
   command -v az    >/dev/null 2>&1 || fail "Azure CLI (az) not found. Install: https://learn.microsoft.com/en-us/cli/azure/install-azure-cli"
   command -v jq    >/dev/null 2>&1 || fail "jq not found. Install: sudo apt-get install jq"
   command -v curl  >/dev/null 2>&1 || fail "curl not found."
+  command -v ssh-keygen >/dev/null 2>&1 || fail "ssh-keygen not found."
 
   # Prompt for missing required values
   if [[ -z "$ADO_ORG" ]]; then
@@ -91,17 +100,34 @@ preflight() {
   if [[ -z "$ADO_PROJECT" ]]; then
     read -rp "Azure DevOps project name: " ADO_PROJECT
   fi
-  if [[ -z "$GITHUB_REPO" ]]; then
-    # Try to detect from git remote
-    local detected
-    detected=$(git remote get-url origin 2>/dev/null | sed -E 's|.*github\.com[:/](.+)\.git$|\1|' || true)
-    if [[ -n "$detected" ]]; then
-      read -rp "GitHub repository [$detected]: " GITHUB_REPO
-      GITHUB_REPO="${GITHUB_REPO:-$detected}"
+
+  # Auto-detect repository type and URL from git remote
+  if [[ -z "$REPO_URL" ]]; then
+    local detected_url
+    detected_url=$(git remote get-url origin 2>/dev/null || true)
+    if [[ -n "$detected_url" ]]; then
+      read -rp "Repository URL [$detected_url]: " REPO_URL
+      REPO_URL="${REPO_URL:-$detected_url}"
     else
-      read -rp "GitHub repository (owner/repo): " GITHUB_REPO
+      read -rp "Repository URL (GitHub or ADO Git): " REPO_URL
     fi
   fi
+
+  # Determine repo type from URL
+  if echo "$REPO_URL" | grep -qE '(dev\.azure\.com|visualstudio\.com)'; then
+    REPO_TYPE="TfsGit"
+    # Extract ADO Git repo name: last segment before .git or end
+    REPO_NAME=$(echo "$REPO_URL" | sed -E 's|.*/_git/([^/]+)(\.git)?$|\1|')
+    log "  Detected ADO Git repository: $REPO_NAME"
+  elif echo "$REPO_URL" | grep -qE 'github\.com'; then
+    REPO_TYPE="GitHub"
+    # Extract owner/repo from GitHub URL
+    REPO_NAME=$(echo "$REPO_URL" | sed -E 's|.*github\.com[:/](.+?)(\.git)?$|\1|')
+    log "  Detected GitHub repository: $REPO_NAME"
+  else
+    fail "Cannot determine repository type from URL: $REPO_URL\nExpected GitHub (github.com) or ADO Git (dev.azure.com)"
+  fi
+
   if [[ -z "$AZURE_SUBSCRIPTION_ID" ]]; then
     local detected_sub
     detected_sub=$(az account show --query id -o tsv 2>/dev/null || true)
@@ -119,7 +145,7 @@ preflight() {
 
   [[ -z "$ADO_ORG" ]]              && fail "ADO_ORG is required"
   [[ -z "$ADO_PROJECT" ]]          && fail "ADO_PROJECT is required"
-  [[ -z "$GITHUB_REPO" ]]          && fail "GITHUB_REPO is required"
+  [[ -z "$REPO_URL" ]]             && fail "REPO_URL is required"
   [[ -z "$AZURE_SUBSCRIPTION_ID" ]] && fail "AZURE_SUBSCRIPTION_ID is required"
   [[ -z "$AZURE_DEVOPS_PAT" ]]     && fail "AZURE_DEVOPS_PAT is required"
 
@@ -132,7 +158,8 @@ preflight() {
   log "Preflight checks passed."
   log "  ADO Org:         $ADO_ORG"
   log "  ADO Project:     $ADO_PROJECT"
-  log "  GitHub Repo:     $GITHUB_REPO"
+  log "  Repo Type:       $REPO_TYPE"
+  log "  Repo Name:       $REPO_NAME"
   log "  Subscription:    $AZURE_SUBSCRIPTION_ID"
   log "  Pipeline YAML:   $PIPELINE_YAML_PATH"
   log "  Service Conn:    $SERVICE_CONNECTION_NAME"
@@ -333,13 +360,6 @@ grant_pipeline_access() {
 create_pipeline() {
   log "Step 6: Creating pipeline definition..."
 
-  # Find GitHub service connection
-  local gh_sc_id
-  gh_sc_id=$(ado_api GET "https://dev.azure.com/$ADO_ORG/$ADO_PROJECT/_apis/serviceendpoint/endpoints?api-version=7.1" | \
-    jq -r '.value[] | select(.type == "GitHub") | .id' | head -1)
-
-  [[ -z "$gh_sc_id" || "$gh_sc_id" == "null" ]] && fail "No GitHub service connection found in ADO project. Create one first: Project Settings → Service connections → New → GitHub"
-
   # Check if pipeline already exists
   local existing_pipeline
   existing_pipeline=$(ado_api GET "https://dev.azure.com/$ADO_ORG/$ADO_PROJECT/_apis/build/definitions?api-version=7.1&name=$PIPELINE_NAME" | \
@@ -348,12 +368,23 @@ create_pipeline() {
   if [[ -n "$existing_pipeline" ]]; then
     warn "Pipeline '$PIPELINE_NAME' already exists (id: $existing_pipeline). Reusing."
     PIPELINE_ID="$existing_pipeline"
-  else
-    local payload
+    return
+  fi
+
+  local payload
+
+  if [[ "$REPO_TYPE" == "GitHub" ]]; then
+    # Find GitHub service connection
+    local gh_sc_id
+    gh_sc_id=$(ado_api GET "https://dev.azure.com/$ADO_ORG/$ADO_PROJECT/_apis/serviceendpoint/endpoints?api-version=7.1" | \
+      jq -r '.value[] | select(.type == "GitHub") | .id' | head -1)
+
+    [[ -z "$gh_sc_id" || "$gh_sc_id" == "null" ]] && fail "No GitHub service connection found in ADO project. Create one first: Project Settings → Service connections → New → GitHub"
+
     payload=$(jq -n \
       --arg name "$PIPELINE_NAME" \
       --arg yaml "$PIPELINE_YAML_PATH" \
-      --arg repo "$GITHUB_REPO" \
+      --arg repo "$REPO_NAME" \
       --arg ghScId "$gh_sc_id" \
       '{
         name: $name,
@@ -377,12 +408,40 @@ create_pipeline() {
         triggers: [{ settingsSourceType: 2, triggerType: "continuousIntegration" }]
       }')
 
-    local result
-    result=$(ado_api POST "https://dev.azure.com/$ADO_ORG/$ADO_PROJECT/_apis/build/definitions?api-version=7.1" "$payload")
-    PIPELINE_ID=$(echo "$result" | jq -r '.id')
+  elif [[ "$REPO_TYPE" == "TfsGit" ]]; then
+    # For ADO Git, get repository ID from the project
+    local ado_repo_id
+    ado_repo_id=$(ado_api GET "https://dev.azure.com/$ADO_ORG/$ADO_PROJECT/_apis/git/repositories/$REPO_NAME?api-version=7.1" | \
+      jq -r '.id // empty')
 
-    [[ -z "$PIPELINE_ID" || "$PIPELINE_ID" == "null" ]] && fail "Failed to create pipeline"
+    [[ -z "$ado_repo_id" || "$ado_repo_id" == "null" ]] && fail "ADO Git repository '$REPO_NAME' not found in project '$ADO_PROJECT'"
+
+    payload=$(jq -n \
+      --arg name "$PIPELINE_NAME" \
+      --arg yaml "$PIPELINE_YAML_PATH" \
+      --arg repoId "$ado_repo_id" \
+      --arg repoName "$REPO_NAME" \
+      '{
+        name: $name,
+        type: "build",
+        quality: "definition",
+        process: { yamlFilename: $yaml, type: 2 },
+        repository: {
+          id: $repoId,
+          name: $repoName,
+          type: "TfsGit",
+          defaultBranch: "refs/heads/main",
+          url: ("https://dev.azure.com/" + env.ADO_ORG + "/" + env.ADO_PROJECT + "/_git/" + $repoName)
+        },
+        triggers: [{ settingsSourceType: 2, triggerType: "continuousIntegration" }]
+      }')
   fi
+
+  local result
+  result=$(ado_api POST "https://dev.azure.com/$ADO_ORG/$ADO_PROJECT/_apis/build/definitions?api-version=7.1" "$payload")
+  PIPELINE_ID=$(echo "$result" | jq -r '.id')
+
+  [[ -z "$PIPELINE_ID" || "$PIPELINE_ID" == "null" ]] && fail "Failed to create pipeline"
 
   log "  Pipeline ID: $PIPELINE_ID"
 }
@@ -407,12 +466,12 @@ configure_pipeline() {
   # Set pool
   updated=$(echo "$definition" | jq --arg qid "$queue_id" '.queue = {"id": ($qid | tonumber), "name": "Azure Pipelines"}')
 
-  # Set SSH key variable if provided
-  if [[ -n "$SSH_PUBLIC_KEY" ]]; then
-    updated=$(echo "$updated" | jq --arg key "$SSH_PUBLIC_KEY" '.variables.ADMIN_SSH_PUBLIC_KEY = {"value": $key, "isSecret": true, "allowOverride": true}')
-    log "  Pipeline secret ADMIN_SSH_PUBLIC_KEY set."
+  # Set PLATFORM_KV_ID variable if platform KV was created
+  if [[ -n "${PLATFORM_KV_ID:-}" ]]; then
+    updated=$(echo "$updated" | jq --arg kvId "$PLATFORM_KV_ID" '.variables.PLATFORM_KV_ID = {"value": $kvId, "isSecret": false, "allowOverride": true}')
+    log "  Pipeline variable PLATFORM_KV_ID set."
   else
-    warn "  SSH_PUBLIC_KEY not provided. Set ADMIN_SSH_PUBLIC_KEY manually in pipeline variables."
+    warn "  PLATFORM_KV_ID not available. Set it manually in pipeline variables after creating platform KV."
   fi
 
   ado_api PUT "https://dev.azure.com/$ADO_ORG/$ADO_PROJECT/_apis/build/definitions/$PIPELINE_ID?api-version=7.1" "$updated" >/dev/null
@@ -423,6 +482,97 @@ configure_pipeline() {
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Step 8: Create platform resource group + management Key Vault + SSH keys
+# ---------------------------------------------------------------------------
+create_platform_kv() {
+  log "Step 8: Creating platform resource group and Key Vault..."
+
+  local platform_rg="rg-platform-${LOCATION_CODE}-${ENVIRONMENT}"
+  local kv_suffix
+  kv_suffix=$(echo "$AZURE_SUBSCRIPTION_ID" | md5sum | cut -c1-8)
+  local kv_name="kv-platform-${LOCATION_CODE}-${kv_suffix}"
+
+  # Create platform resource group
+  if az group show -n "$platform_rg" &> /dev/null; then
+    warn "Platform resource group '$platform_rg' already exists. Reusing."
+  else
+    az group create -n "$platform_rg" -l "$LOCATION" -o none
+    log "  Created resource group: $platform_rg"
+  fi
+
+  # Create Key Vault
+  if az keyvault show -n "$kv_name" &> /dev/null 2>&1; then
+    warn "Key Vault '$kv_name' already exists. Reusing."
+  else
+    az keyvault create \
+      -n "$kv_name" \
+      -g "$platform_rg" \
+      -l "$LOCATION" \
+      --enable-rbac-authorization true \
+      --enable-purge-protection true \
+      --retention-days 7 \
+      -o none
+    log "  Created Key Vault: $kv_name"
+  fi
+
+  PLATFORM_KV_ID=$(az keyvault show -n "$kv_name" --query id -o tsv)
+
+  # Grant current user Key Vault Administrator to set secrets
+  local current_user_oid
+  current_user_oid=$(az ad signed-in-user show --query id -o tsv 2>/dev/null || true)
+  if [[ -n "$current_user_oid" ]]; then
+    local existing_role
+    existing_role=$(az role assignment list --assignee "$current_user_oid" --role "Key Vault Administrator" --scope "$PLATFORM_KV_ID" --query "length(@)" -o tsv 2>/dev/null || echo "0")
+    if [[ "$existing_role" -eq 0 ]]; then
+      az role assignment create \
+        --assignee-object-id "$current_user_oid" \
+        --assignee-principal-type User \
+        --role "Key Vault Administrator" \
+        --scope "$PLATFORM_KV_ID" \
+        -o none
+      log "  Granted Key Vault Administrator to current user"
+      log "  Waiting 30s for RBAC propagation..."
+      sleep 30
+    fi
+  fi
+
+  # Grant service principal Key Vault Secrets User (for Terraform to read SSH key)
+  if [[ -n "${SP_OBJECT_ID:-}" ]]; then
+    local existing_sp_role
+    existing_sp_role=$(az role assignment list --assignee "$SP_OBJECT_ID" --role "Key Vault Secrets User" --scope "$PLATFORM_KV_ID" --query "length(@)" -o tsv 2>/dev/null || echo "0")
+    if [[ "$existing_sp_role" -eq 0 ]]; then
+      az role assignment create \
+        --assignee-object-id "$SP_OBJECT_ID" \
+        --assignee-principal-type ServicePrincipal \
+        --role "Key Vault Secrets User" \
+        --scope "$PLATFORM_KV_ID" \
+        -o none
+      log "  Granted Key Vault Secrets User to pipeline service principal"
+    fi
+  fi
+
+  # Generate SSH key pair and store in KV
+  local existing_secret
+  existing_secret=$(az keyvault secret show --vault-name "$kv_name" -n "ssh-public-key" --query "value" -o tsv 2>/dev/null || true)
+  if [[ -n "$existing_secret" ]]; then
+    warn "SSH key already exists in Key Vault. Skipping generation."
+  else
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    ssh-keygen -t ed25519 -f "$tmpdir/ssh-key" -N "" -C "aks-landing-zone-${ENVIRONMENT}" > /dev/null 2>&1
+
+    az keyvault secret set --vault-name "$kv_name" -n "ssh-public-key" --value "$(cat "$tmpdir/ssh-key.pub")" -o none
+    az keyvault secret set --vault-name "$kv_name" -n "ssh-private-key" --value "$(cat "$tmpdir/ssh-key")" -o none
+
+    rm -rf "$tmpdir"
+    log "  Generated SSH key pair and stored in Key Vault"
+  fi
+
+  log "  Platform KV ID: $PLATFORM_KV_ID"
+}
+
 main() {
   echo "============================================="
   echo "  ADO Pipeline Setup — Workload Identity"
@@ -436,6 +586,7 @@ main() {
   create_federated_credential
   grant_pipeline_access
   create_pipeline
+  create_platform_kv
   configure_pipeline
 
   echo
@@ -443,17 +594,19 @@ main() {
   log "  Setup complete!"
   log "============================================="
   log ""
-  log "  Pipeline:    https://dev.azure.com/$ADO_ORG/$ADO_PROJECT/_build?definitionId=$PIPELINE_ID"
-  log "  Service Conn: $SERVICE_CONNECTION_NAME (Workload Identity Federation)"
-  log "  App Reg:      $APP_ID"
+  log "  Pipeline:      https://dev.azure.com/$ADO_ORG/$ADO_PROJECT/_build?definitionId=$PIPELINE_ID"
+  log "  Service Conn:  $SERVICE_CONNECTION_NAME (Workload Identity Federation)"
+  log "  App Reg:       $APP_ID"
+  log "  Repo Type:     $REPO_TYPE"
+  log "  Platform KV:   $PLATFORM_KV_ID"
   log ""
-  if [[ -z "$SSH_PUBLIC_KEY" ]]; then
-    warn "  ACTION REQUIRED: Set ADMIN_SSH_PUBLIC_KEY in pipeline variables"
-    warn "  Go to: Pipelines → $PIPELINE_NAME → Edit → Variables → New variable"
-    warn "  Name: ADMIN_SSH_PUBLIC_KEY, Value: <ssh-public-key>, Keep secret: ✓"
-  fi
+  log "  PLATFORM_KV_ID has been set as a pipeline variable."
+  log "  To trigger: push to main or run manually in ADO"
   log ""
-  log "  To trigger: push to main (infra/terraform/hub/**) or run manually in ADO"
+  log "  After first hub deploy with deploy_cicd_agents=true:"
+  log "    1. Register the ACI UAMI as a service principal in your ADO org"
+  log "    2. Grant it Admin access on the agent pool"
+  log "    3. Switch pipeline pool from 'Azure Pipelines' to self-hosted pool"
 }
 
 main "$@"

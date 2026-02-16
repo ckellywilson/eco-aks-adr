@@ -158,10 +158,9 @@ variable "admin_username" {
   default     = "azureuser"
 }
 
-variable "admin_ssh_public_key" {
-  description = "SSH public key for jump box VM authentication"
+variable "platform_key_vault_id" {
+  description = "Resource ID of the platform Key Vault containing SSH keys and platform secrets (created by setup-ado-pipeline.sh)"
   type        = string
-  sensitive   = true
 }
 
 variable "tags" {
