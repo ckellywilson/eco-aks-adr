@@ -168,8 +168,10 @@ else
   log_error "DNS Resolver not found in $HUB_RG"
 fi
 
-# Private DNS Zones
-EXPECTED_ZONES=("privatelink.azurecr.io" "privatelink.vaultcore.azure.net" "privatelink.eastus2.azmk8s.io")
+# Private DNS Zones — derive AKS zone from region
+AKS_REGION="${AZURE_REGION:-eastus2}"
+AKS_PRIVATE_DNS_ZONE="privatelink.${AKS_REGION}.azmk8s.io"
+EXPECTED_ZONES=("privatelink.azurecr.io" "privatelink.vaultcore.azure.net" "$AKS_PRIVATE_DNS_ZONE")
 for ZONE in "${EXPECTED_ZONES[@]}"; do
   if az network private-dns zone show -g "$HUB_RG" -n "$ZONE" &> /dev/null; then
     log_success "Private DNS zone exists: $ZONE"
@@ -200,7 +202,12 @@ echo ""
 
 log_info "=== Section 3: Spoke Infrastructure Validation ==="
 
-SPOKE_RG="rg-aks-eus2-${ENVIRONMENT}"
+SPOKE_LOCATION_CODE="${SPOKE_LOCATION_CODE:-eus2}"
+if [[ -n "${SPOKE_RG_OVERRIDE:-}" ]]; then
+  SPOKE_RG="$SPOKE_RG_OVERRIDE"
+else
+  SPOKE_RG="rg-aks-${SPOKE_LOCATION_CODE}-${ENVIRONMENT}"
+fi
 if az group show -n "$SPOKE_RG" &> /dev/null; then
   log_success "Spoke resource group exists: $SPOKE_RG"
 else

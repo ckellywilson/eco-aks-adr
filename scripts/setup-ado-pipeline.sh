@@ -565,6 +565,8 @@ create_platform_kv() {
         --scope "$PLATFORM_KV_ID" \
         -o none
       log "  Granted Key Vault Secrets User to pipeline service principal"
+      log "  Waiting 30s for RBAC propagation..."
+      sleep 30
     fi
   fi
 

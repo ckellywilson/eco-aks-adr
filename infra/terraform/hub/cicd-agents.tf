@@ -84,8 +84,9 @@ module "cicd_agents" {
   log_analytics_workspace_creation_enabled = false
   log_analytics_workspace_id               = module.log_analytics.resource_id
 
-  # NAT Gateway — module creates one by default for ACI outbound connectivity
-  # Set to false if hub already has outbound via firewall
+  # NAT Gateway — required for ACI outbound connectivity.
+  # ACI delegated subnets do not support UDRs, so outbound via Azure Firewall is not viable;
+  # keep this enabled to ensure ACI agents can register with ADO, even if the hub has a firewall.
   nat_gateway_creation_enabled = true
 
   enable_telemetry = true
@@ -93,5 +94,6 @@ module "cicd_agents" {
 
   depends_on = [
     azurerm_role_assignment.cicd_agents_kv_reader,
+    module.hub_vnet,
   ]
 }
