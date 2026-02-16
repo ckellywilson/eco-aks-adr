@@ -167,30 +167,6 @@ variable "platform_key_vault_id" {
   }
 }
 
-variable "deploy_cicd_agents" {
-  description = "Deploy self-hosted ACI-based ADO pipeline agents in the hub VNet"
-  type        = bool
-  default     = false
-}
-
-variable "ado_organization_url" {
-  description = "Azure DevOps organization URL (e.g. https://dev.azure.com/myorg)"
-  type        = string
-  default     = ""
-}
-
-variable "ado_agent_pool_name" {
-  description = "Azure DevOps agent pool name for self-hosted ACI agents"
-  type        = string
-  default     = "aci-hub-pool"
-}
-
-variable "aci_agent_count" {
-  description = "Number of ACI-based ADO agent instances"
-  type        = number
-  default     = 2
-}
-
 variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)
