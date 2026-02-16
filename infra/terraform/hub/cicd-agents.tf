@@ -34,6 +34,8 @@ module "cicd_agents" {
   source  = "Azure/avm-ptn-cicd-agents-and-runners/azurerm"
   version = "~> 0.5"
 
+  postfix = "hub-${var.environment}"
+
   # Use existing resource group
   resource_group_creation_enabled = false
   resource_group_name             = azurerm_resource_group.hub.name
@@ -50,25 +52,30 @@ module "cicd_agents" {
   container_instance_container_cpu    = 2
   container_instance_container_memory = 4
 
+  # ACR private endpoint — use hub's existing DNS zone and subnet
+  container_registry_private_dns_zone_creation_enabled = false
+  container_registry_dns_zone_id                       = module.private_dns_zones["privatelink.azurecr.io"].resource_id
+  container_registry_private_endpoint_subnet_id        = module.hub_vnet.subnets["aci_agents_acr"].resource_id
+
   # ADO configuration
   version_control_system_type         = "azuredevops"
   version_control_system_organization = var.ado_organization_url
   version_control_system_pool_name    = var.ado_agent_pool_name
 
   # Auth: UAMI — no PAT tokens
-  version_control_system_authentication_method      = "uami"
-  version_control_system_managed_identity_client_id = azurerm_user_assigned_identity.cicd_agents[0].client_id
-  managed_identities = {
-    user_assigned_resource_ids = [azurerm_user_assigned_identity.cicd_agents[0].id]
-  }
+  version_control_system_authentication_method    = "uami"
+  user_assigned_managed_identity_creation_enabled = false
+  user_assigned_managed_identity_id               = azurerm_user_assigned_identity.cicd_agents[0].id
+  user_assigned_managed_identity_client_id        = azurerm_user_assigned_identity.cicd_agents[0].client_id
+  user_assigned_managed_identity_principal_id     = azurerm_user_assigned_identity.cicd_agents[0].principal_id
 
   # Use existing Log Analytics workspace
   log_analytics_workspace_creation_enabled = false
   log_analytics_workspace_id               = module.log_analytics.resource_id
 
-  # ACR private endpoint for agent images — use hub's DNS zone
-  container_registry_private_dns_zone_creation_enabled = false
-  container_registry_dns_zone_id                       = module.private_dns_zones["privatelink.azurecr.io"].resource_id
+  # NAT Gateway — module creates one by default for ACI outbound connectivity
+  # Set to false if hub already has outbound via firewall
+  nat_gateway_creation_enabled = true
 
   enable_telemetry = true
   tags             = local.common_tags

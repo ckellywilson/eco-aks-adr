@@ -75,7 +75,12 @@ check_command jq
 
 if [[ "$MODE" == "full" ]]; then
   check_command kubectl
-  check_command nslookup || true
+  if ! command -v nslookup &> /dev/null; then
+    log_warning "nslookup not available — DNS resolution tests will be skipped"
+    NSLOOKUP_AVAILABLE=false
+  else
+    NSLOOKUP_AVAILABLE=true
+  fi
 fi
 
 if az account show &> /dev/null; then
@@ -307,6 +312,10 @@ else
 
   log_info "=== Section 4: DNS Resolution Tests ==="
 
+  if [[ "$NSLOOKUP_AVAILABLE" != "true" ]]; then
+    log_warning "Skipping DNS resolution tests (nslookup not available)"
+  else
+
   # AKS API server FQDN
   if [[ -n "$AKS_CLUSTER" ]]; then
     AKS_FQDN=$(az aks show -g "$SPOKE_RG" -n "$AKS_CLUSTER" --query "privateFqdn" -o tsv 2>/dev/null || true)
@@ -343,6 +352,8 @@ else
       log_error "Key Vault DNS resolution failed: $KV_FQDN"
     fi
   fi
+
+  fi # end nslookup available check
 
   echo ""
 

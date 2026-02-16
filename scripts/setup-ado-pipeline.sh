@@ -421,6 +421,8 @@ create_pipeline() {
       --arg yaml "$PIPELINE_YAML_PATH" \
       --arg repoId "$ado_repo_id" \
       --arg repoName "$REPO_NAME" \
+      --arg adoOrg "$ADO_ORG" \
+      --arg adoProject "$ADO_PROJECT" \
       '{
         name: $name,
         type: "build",
@@ -431,7 +433,7 @@ create_pipeline() {
           name: $repoName,
           type: "TfsGit",
           defaultBranch: "refs/heads/main",
-          url: ("https://dev.azure.com/" + env.ADO_ORG + "/" + env.ADO_PROJECT + "/_git/" + $repoName)
+          url: ("https://dev.azure.com/" + $adoOrg + "/" + $adoProject + "/_git/" + $repoName)
         },
         triggers: [{ settingsSourceType: 2, triggerType: "continuousIntegration" }]
       }')
@@ -491,7 +493,13 @@ create_platform_kv() {
 
   local platform_rg="rg-platform-${LOCATION_CODE}-${ENVIRONMENT}"
   local kv_suffix
-  kv_suffix=$(echo "$AZURE_SUBSCRIPTION_ID" | md5sum | cut -c1-8)
+  if command -v md5sum &>/dev/null; then
+    kv_suffix=$(echo "$AZURE_SUBSCRIPTION_ID" | md5sum | cut -c1-8)
+  elif command -v md5 &>/dev/null; then
+    kv_suffix=$(echo "$AZURE_SUBSCRIPTION_ID" | md5 | cut -c1-8)
+  else
+    fail "Neither md5sum nor md5 command found for computing Key Vault suffix"
+  fi
   local kv_name="kv-platform-${LOCATION_CODE}-${kv_suffix}"
 
   # Create platform resource group
