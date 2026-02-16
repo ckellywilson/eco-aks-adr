@@ -17,6 +17,15 @@ Repository-wide instructions for GitHub Copilot agents. Path-specific guidance l
 - **Copilot agents MUST create a feature branch** — never commit code changes directly to main
 - After merge: delete feature branch (local + remote) and pull main
 
+### Terraform Quality Gates
+
+**Required before committing ANY `*.tf` changes:**
+
+1. **Format**: `terraform fmt -recursive -check infra/terraform/` — must pass with no diffs
+2. **Validate**: `terraform validate` in each modified module directory (requires `terraform init` first)
+
+If `terraform init` is not possible (e.g., no backend access), `terraform fmt` is the minimum gate.
+
 ### Administrative Tasks (Direct to Main)
 
 **Only for non-functional changes that don't affect infrastructure or pipeline behavior:**

@@ -2,12 +2,15 @@
 # Deploys hub Terraform code per .github/instructions/hub-deploy.instructions.md
 #
 # Prerequisites (one-time manual setup):
-#   1. Create ARM service connection 'azure-hub-prod' with Workload Identity Federation
-#      - App Registration → Federated Credential → ADO issuer
-#      - Grant: Contributor + Storage Blob Data Contributor on subscription
-#   2. Set pipeline secret variable ADMIN_SSH_PUBLIC_KEY in pipeline UI
+#   1. Run scripts/setup-ado-pipeline.sh to create:
+#      - ARM service connection with Workload Identity Federation
+#      - Platform Key Vault with SSH keys
+#   2. Set pipeline variable PLATFORM_KV_ID to the platform Key Vault resource ID
 #      - Go to Pipelines → hub-deploy → Edit → Variables → New variable
-#      - Name: ADMIN_SSH_PUBLIC_KEY, Value: <your-ssh-public-key>, Keep secret: ✓
+#      - Name: PLATFORM_KV_ID, Value: /subscriptions/.../resourceGroups/.../providers/Microsoft.KeyVault/vaults/...
+#
+# Bootstrap: First deploy uses Microsoft-hosted agents. After CI/CD agents are deployed,
+# switch pool to the self-hosted agent pool name from hub outputs.
 
 trigger:
   branches:
@@ -23,6 +26,8 @@ pool:
 variables:
   - name: TF_WORKING_DIR
     value: 'infra/terraform/hub'
+  - name: ENVIRONMENT
+    value: 'prod'
   - name: ARM_USE_OIDC
     value: 'true'
   - name: TF_VAR_FILE
@@ -94,7 +99,7 @@ stages:
                 terraform init -backend-config=$(BACKEND_CONFIG)
                 terraform plan \
                   -var-file="$(TF_VAR_FILE)" \
-                  -var="admin_ssh_public_key=$(ADMIN_SSH_PUBLIC_KEY)" \
+                  -var="platform_key_vault_id=$(PLATFORM_KV_ID)" \
                   -out=tfplan \
                   -input=false
 
@@ -137,3 +142,29 @@ stages:
 
                 terraform init -backend-config=$(BACKEND_CONFIG)
                 terraform apply -input=false $(Pipeline.Workspace)/tfplan/tfplan
+
+          - task: AzureCLI@2
+            displayName: 'Validate Infrastructure'
+            inputs:
+              azureSubscription: 'azure-hub-prod'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
+              inlineScript: |
+                export ARM_CLIENT_ID=$servicePrincipalId
+                export ARM_TENANT_ID=$tenantId
+                export ARM_OIDC_TOKEN=$idToken
+                export ARM_USE_OIDC=true
+                export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+
+                chmod +x scripts/validate-networking.sh
+                ./scripts/validate-networking.sh $(ENVIRONMENT) --mode=infra
+
+          - script: |
+              echo "=== Post-Deployment: Manual Validation ==="
+              echo "Connect to spoke jump box via Bastion, then run:"
+              echo "  ./scripts/validate-networking.sh $(ENVIRONMENT) --mode=full"
+              echo ""
+              echo "This validates DNS resolution, AKS connectivity,"
+              echo "and in-cluster networking from within the private network."
+            displayName: 'Print Manual Validation Instructions'

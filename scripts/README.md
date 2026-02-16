@@ -1,249 +1,153 @@
-# Validation Scripts
+# Scripts
 
-This directory contains validation scripts for testing the AKS landing zone deployment.
+This directory contains setup and validation scripts for the AKS landing zone.
 
 ## Scripts
 
-### 1. validate-deployment.sh
+### setup-ado-pipeline.sh
 
-Validates that hub and spoke infrastructure is correctly deployed.
+Automates the one-time setup of Azure DevOps pipelines for Terraform deployments using Workload Identity Federation (OIDC). Supports both **GitHub** and **ADO Git** repositories (auto-detected from `git remote`).
 
-**Usage:**
-```bash
-./validate-deployment.sh <environment>
-```
-
-**Example:**
-```bash
-./validate-deployment.sh dev
-```
-
-**What it checks:**
-- **Hub Infrastructure:**
-  - Resource group existence
-  - Hub VNet and address space
-  - Azure Firewall and private IP
-  - DNS Resolver (inbound/outbound endpoints)
-  - Private DNS zones and VNet links
-  - Log Analytics Workspace
-  - Hub jump box VM
-
-- **Spoke Infrastructure:**
-  - Resource group existence
-  - Spoke VNet and DNS configuration
-  - VNet peering state
-  - AKS cluster configuration
-    - Kubernetes version
-    - Network profile (Azure CNI Overlay, Cilium)
-    - Private cluster status
-    - Node pools
-  - Azure Container Registry (ACR)
-    - SKU (Premium)
-    - Private endpoint
-  - Key Vault
-    - Private endpoint
-  - Spoke jump box VM
-
-- **AKS Connectivity:**
-  - kubectl credentials retrieval
-  - Node status
-  - Cluster accessibility
-
-**Prerequisites:**
-- Azure CLI (`az`) installed and logged in
-- `jq` installed for JSON parsing
-- Appropriate Azure permissions to read resources
-
-**Exit codes:**
-- `0` - All checks passed
-- `1` - One or more checks failed
-
----
-
-### 2. validate-networking.sh
-
-Validates network connectivity and DNS resolution from within the AKS cluster.
+**What it does:**
+1. Creates an Azure AD App Registration + Service Principal
+2. Grants RBAC roles (Contributor + Storage Blob Data Contributor, plus User Access Administrator for spoke)
+3. Creates an ADO service connection (Workload Identity Federation)
+4. Creates a federated credential on the App Registration
+5. Grants all pipelines access to the service connection
+6. Creates the pipeline definition (GitHub or ADO Git)
+7. Creates platform RG + management Key Vault + SSH key pair
+8. Sets the agent pool and pipeline variables (`PLATFORM_KV_ID`)
 
 **Usage:**
 ```bash
-./validate-networking.sh
+export AZURE_DEVOPS_PAT='<your-pat>'
+./scripts/setup-ado-pipeline.sh
 ```
 
-**What it checks:**
-- **DNS Resolution:**
-  - External DNS (www.microsoft.com)
-  - Azure service DNS (management.azure.com)
-  - Kubernetes internal DNS (cluster.local)
-
-- **Network Connectivity:**
-  - Outbound HTTPS to internet
-  - Azure API connectivity
-  - Microsoft Container Registry (MCR) access
-
-- **Pod Networking:**
-  - Pod IP assignment
-  - Overlay CIDR validation (192.168.0.0/16)
-  - Node IP information
+The script is **idempotent** — safe to re-run. It auto-detects the repository type from `git remote get-url origin` (`github.com` → GitHub, `dev.azure.com` → ADO Git).
 
 **Prerequisites:**
-- `kubectl` configured with AKS cluster access
-- AKS cluster running and accessible
-- Permissions to create pods in a test namespace
-
-**How it works:**
-1. Creates a temporary `network-test` namespace
-2. Deploys a pod with network diagnostic tools (`nicolaka/netshoot`)
-3. Executes tests from within the pod
-4. Cleans up test resources
-
-**Exit codes:**
-- `0` - All network tests passed
-- `1` - One or more tests failed
+- Azure CLI authenticated (`az login`)
+- ADO PAT with Build (Read & Execute), Code (Read) scopes
+- `jq`, `ssh-keygen`, `curl` installed
+- For GitHub repos: GitHub service connection in ADO project
 
 ---
 
-## Running Validations
+### validate-networking.sh
 
-### After Hub Deployment
+Unified validation script for hub and spoke infrastructure, DNS resolution, AKS connectivity, and in-cluster networking.
 
+**Usage:**
 ```bash
-# Validate hub infrastructure
-./validate-deployment.sh dev
-
-# Check specific components
-az network firewall show -g rg-hub-eus2-dev -n <firewall-name>
-az dns-resolver list -g rg-hub-eus2-dev
+./validate-networking.sh <environment> [--mode=infra|full]
 ```
 
-### After Spoke Deployment
+**Modes:**
 
+| Mode | Sections | Runner | Use Case |
+|------|----------|--------|----------|
+| `--mode=infra` | 1-3 (pre-flight, hub, spoke) | Pipeline agent | Post-apply validation in CI/CD |
+| `--mode=full` | All 1-7 | Jump box via Bastion | Complete validation including DNS and AKS |
+
+**What it checks:**
+
+| Section | Description | Mode |
+|---------|-------------|------|
+| 1. Pre-flight | az, jq availability, Azure login (kubectl in full mode only) | Both |
+| 2. Hub Infrastructure | RG, VNet, Firewall, DNS Resolver, DNS zones, Log Analytics | Both |
+| 3. Spoke Infrastructure | RG, VNet, DNS config, peering, AKS config, ACR, KV | Both |
+| 4. DNS Resolution | nslookup for AKS API, ACR, KV private endpoints | Full only |
+| 5. AKS Connectivity | kubectl get nodes, node readiness | Full only |
+| 6. In-Cluster Tests | External/Azure/K8s DNS, outbound HTTPS, pod overlay CIDR | Full only |
+| 7. Summary | Pass/fail/warning counts | Both |
+
+**Examples:**
 ```bash
-# Validate spoke infrastructure
-./validate-deployment.sh dev
+# Pipeline post-apply validation (safe for external agents)
+./validate-networking.sh prod --mode=infra
 
-# Get AKS credentials
-az aks get-credentials -g rg-spoke-aks-eus2-dev -n <aks-cluster-name>
+# Complete validation from jump box
+./validate-networking.sh prod --mode=full
 
-# Validate networking from within cluster
-./validate-networking.sh
-
-# Check AKS node status
-kubectl get nodes
-kubectl get pods -A
+# Defaults to full mode
+./validate-networking.sh prod
 ```
 
-### From Jump Box
+---
 
-For private AKS clusters, run validations from the spoke jump box:
+## Pipeline Integration
+
+Both hub and spoke pipelines include automatic infra validation after apply:
+
+```yaml
+# Automatic in pipeline (post-apply step)
+- script: |
+    chmod +x scripts/validate-networking.sh
+    ./scripts/validate-networking.sh prod --mode=infra
+  displayName: 'Validate Infrastructure'
+```
+
+The pipeline also prints instructions for manual full validation from the jump box.
+
+### Manual Validation (from jump box via Bastion)
+
+For private AKS clusters, full DNS and connectivity validation must run from within the private network:
 
 ```bash
-# SSH to spoke jump box (via hub jump box or Bastion)
-ssh azureuser@<jumpbox-ip>
+# Connect to spoke jump box via Azure Bastion
+az network bastion ssh \
+  --name <bastion-name> \
+  --resource-group <hub-rg> \
+  --target-resource-id <jumpbox-vm-id> \
+  --auth-type ssh-key \
+  --username azureuser \
+  --ssh-key ~/.ssh/id_ed25519
 
-# Clone repo or copy scripts
-# Run validations
-./validate-networking.sh
+# Run full validation
+./scripts/validate-networking.sh prod --mode=full
 ```
+
+---
+
+## Self-Hosted CI/CD Agents
+
+After deploying with `deploy_cicd_agents = true` in the hub, ACI-based pipeline agents run in the hub VNet. These agents can access all private resources across peered spokes.
+
+### Post-Deploy Setup (Manual)
+
+1. **Register UAMI in ADO**: Add the ACI agent UAMI as a service principal in your ADO organization
+2. **Grant pool access**: Give the UAMI Admin access on the agent pool
+3. **Switch pipeline pool**: Update pipeline YAML from `vmImage: 'ubuntu-latest'` to the self-hosted pool name
 
 ---
 
 ## Troubleshooting
 
 ### DNS Issues
-
-If DNS resolution fails:
 - Check spoke VNet DNS servers: `az network vnet show -g <rg> -n <vnet> --query dhcpOptions.dnsServers`
-- Verify DNS Resolver inbound endpoint is `10.0.6.4`
-- Check Private DNS zone VNet links
+- Verify DNS Resolver inbound endpoint IP matches spoke VNet custom DNS
+- Check Private DNS zone VNet links to hub VNet
 
 ### Connectivity Issues
-
-If outbound connectivity fails:
 - Verify Azure Firewall rules allow required traffic
 - Check route table on AKS subnet (default route via firewall)
 - Ensure NSG rules don't block outbound traffic
 
 ### AKS Access Issues
-
-If kubectl cannot connect:
 - For private clusters, connect via jump box or VPN
 - Verify VNet peering is in `Connected` state
 - Check AKS API server authorized IP ranges
 
 ### Pod Networking Issues
-
-If pods can't reach services:
 - Verify Cilium dataplane is active: `kubectl get pods -n kube-system | grep cilium`
 - Check network policies: `kubectl get networkpolicies -A`
 - Validate pod CIDR is `192.168.0.0/16`
 
 ---
 
-## Integration with CI/CD
-
-These scripts can be integrated into CI/CD pipelines for automated validation:
-
-### Azure DevOps
-
-```yaml
-- task: AzureCLI@2
-  inputs:
-    azureSubscription: 'your-service-connection'
-    scriptType: 'bash'
-    scriptLocation: 'scriptPath'
-    scriptPath: './scripts/validate-deployment.sh'
-    arguments: 'dev'
-  displayName: 'Validate Deployment'
-```
-
-### GitHub Actions
-
-```yaml
-- name: Validate Deployment
-  run: |
-    chmod +x ./scripts/validate-deployment.sh
-    ./scripts/validate-deployment.sh dev
-  env:
-    ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
-    ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
-    ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
-    ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
-```
-
----
-
-## Additional Validation Steps
-
-### Manual Validation Checklist
-
-- [ ] Hub VNet peered to spoke VNet (bidirectional, state = Connected)
-- [ ] Spoke VNet DNS servers = 10.0.6.4 (hub DNS Resolver)
-- [ ] Private DNS zones linked to hub VNet
-- [ ] Azure Firewall has rules for AKS dependencies
-- [ ] AKS network profile: Azure CNI Overlay + Cilium
-- [ ] ACR and Key Vault have private endpoints
-- [ ] Diagnostic settings send logs to Log Analytics
-- [ ] Jump boxes can SSH and have tools installed
-
-### Load Testing
-
-After validation, test AKS workloads:
-
-```bash
-# Deploy sample application
-kubectl create deployment nginx --image=nginx
-kubectl expose deployment nginx --port=80
-
-# Scale and test
-kubectl scale deployment nginx --replicas=10
-kubectl get pods -o wide
-```
-
----
-
 ## Support
 
-For issues or questions:
 - Review [main README](../README.md)
 - Check Terraform outputs: `terraform output`
 - Review Azure Portal for resource status

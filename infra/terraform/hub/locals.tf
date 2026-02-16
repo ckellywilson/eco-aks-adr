@@ -73,4 +73,31 @@ locals {
       ]
     }
   }
+
+  # ACI agent subnets — only included when deploy_cicd_agents is true.
+  # Address ranges verified non-conflicting with hub base subnets:
+  #   Base: 10.0.1.0/26, 10.0.2.0/27, 10.0.3.0/27, 10.0.4.0/24, 10.0.6.0/28, 10.0.7.0/28
+  #   ACI:  10.0.8.0/27, 10.0.9.0/29 — safe within hub 10.0.0.0/16 space.
+  aci_subnet_config = var.deploy_cicd_agents ? {
+    aci_agents = {
+      name             = "aci-agents"
+      address_prefixes = ["10.0.8.0/27"]
+      delegation = [
+        {
+          name = "Microsoft.ContainerInstance.containerGroups"
+          service_delegation = {
+            name    = "Microsoft.ContainerInstance/containerGroups"
+            actions = ["Microsoft.Network/virtualNetworks/subnets/action"]
+          }
+        }
+      ]
+    }
+    aci_agents_acr = {
+      name             = "aci-agents-acr"
+      address_prefixes = ["10.0.9.0/29"]
+    }
+  } : {}
+
+  # Merge base subnets with conditional ACI subnets
+  all_subnet_config = merge(local.subnet_config, local.aci_subnet_config)
 }

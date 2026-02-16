@@ -158,10 +158,14 @@ variable "admin_username" {
   default     = "azureuser"
 }
 
-variable "admin_ssh_public_key" {
-  description = "SSH public key for jump box VM authentication"
+variable "platform_key_vault_id" {
+  description = "Resource ID of the platform Key Vault containing SSH keys and platform secrets (created by setup-ado-pipeline.sh)"
   type        = string
-  sensitive   = true
+
+  validation {
+    condition     = can(regex("^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.KeyVault/vaults/[^/]+$", var.platform_key_vault_id))
+    error_message = "platform_key_vault_id must be a valid Azure Key Vault resource ID in the format /subscriptions/{subId}/resourceGroups/{rg}/providers/Microsoft.KeyVault/vaults/{vaultName}."
+  }
 }
 
 variable "tags" {
