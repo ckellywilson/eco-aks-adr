@@ -1,11 +1,11 @@
 output "resource_group_name" {
   description = "CI/CD resource group name"
-  value       = data.azurerm_resource_group.cicd.name
+  value       = azurerm_resource_group.cicd.name
 }
 
 output "cicd_vnet_id" {
   description = "CI/CD VNet resource ID"
-  value       = local.cicd_vnet_id
+  value       = azurerm_virtual_network.cicd.id
 }
 
 output "agent_pool_name" {

@@ -82,12 +82,6 @@ spoke_vnets = {
     resource_group_name = "rg-aks-eus2-prod"
     address_space       = ["10.1.0.0/16"]
   }
-  "cicd-agents" = {
-    hub_managed         = true                      # Hub creates RG + VNet
-    name                = "vnet-cicd-prod-eus2"
-    resource_group_name = "rg-cicd-eus2-prod"
-    address_space       = ["10.2.0.0/24"]           # Small — just ACI agents
-  }
   "spoke-data" = {
     hub_managed         = false                     # Already exists, hub only peers
     name                = "vnet-data-prod-eus2"
@@ -95,6 +89,10 @@ spoke_vnets = {
     address_space       = ["10.2.0.0/16"]
   }
 }
+
+# CI/CD landing zone is NOT in spoke_vnets — it manages its own RG, VNet, and peering.
+# Include its CIDR in spoke_vnet_address_spaces so hub firewall rules cover CI/CD traffic.
+spoke_vnet_address_spaces = ["10.2.0.0/24"]
 ```
 
 ---

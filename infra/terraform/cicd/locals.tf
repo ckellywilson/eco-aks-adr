@@ -8,10 +8,9 @@ locals {
 
   location_code = lookup(local.location_map, var.location, substr(var.location, 0, 4))
 
-  hub_outputs    = data.terraform_remote_state.hub.outputs
-  cicd_rg_name   = data.azurerm_resource_group.cicd.name
-  cicd_vnet_id   = local.hub_outputs.spoke_vnet_ids[var.spoke_key]
-  cicd_vnet_name = data.azurerm_virtual_network.cicd.name
+  hub_outputs  = data.terraform_remote_state.hub.outputs
+  hub_rg_name  = split("/", local.hub_outputs.hub_vnet_id)[4]
+  hub_vnet_name = local.hub_outputs.hub_vnet_name
 
   common_tags = merge(
     var.tags,

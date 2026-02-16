@@ -13,8 +13,10 @@ subscription_id = "your-subscription-id-here"
 
 environment = "prod"
 
-# Spoke key — must match the key in hub's spoke_vnets variable
-spoke_key = "cicd-agents"
+# CI/CD resource group and VNet (self-contained, not hub-managed)
+cicd_resource_group_name = "rg-cicd-eus2-prod"
+cicd_vnet_name           = "vnet-cicd-prod-eus2"
+cicd_vnet_address_space  = ["10.2.0.0/24"]
 
 # Azure DevOps configuration
 ado_organization_url = "https://dev.azure.com/your-org"
