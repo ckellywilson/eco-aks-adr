@@ -31,6 +31,8 @@ variables:
     value: 'prod.tfvars'
   - name: BACKEND_CONFIG
     value: 'backend-prod.tfbackend'
+  - name: ADO_AGENT_POOL_NAME
+    value: 'aci-cicd-pool'
 
 stages:
   - stage: Validate

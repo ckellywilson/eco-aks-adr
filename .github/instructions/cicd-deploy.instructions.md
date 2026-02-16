@@ -111,7 +111,7 @@ spoke_vnets = {
 
 ### Subnet Provisioning
 
-The hub creates the VNet but does **NOT** create CI/CD subnets. Subnets are application-specific and owned by the CI/CD deployment. The CI/CD module uses the AVM VNet module in subnet-only mode to add subnets to the hub-created VNet.
+The hub creates the VNet but does **NOT** create CI/CD subnets. Subnets are application-specific and owned by the CI/CD deployment. The CI/CD Terraform code MUST provision subnets directly (for example, using `azurerm_subnet` resources) into the existing hub-created VNet, and MUST NOT attempt to create or manage the VNet resource itself.
 
 ---
 
