@@ -130,32 +130,34 @@ The hub creates the VNet but does **NOT** create CI/CD subnets. Subnets are appl
 
 ### Subnet Sizing Guidance
 
-- **ACI agents subnet** (`/27` = 30 IPs): Each ACI container group consumes one IP. With the default 2 agents, this provides ample headroom for scaling. ACI subnet delegation is **mandatory** — the subnet cannot contain any other resource types.
-- **ACR private endpoint subnet** (`/29` = 6 IPs): Private endpoint for the module-managed ACR. Only needs 1 IP for the PE + Azure reserved IPs.
+- **ACI agents subnet** (`/27` = 32 addresses, 27 usable after Azure reservation): Each ACI container group consumes one IP. With the default 2 agents, this provides ample headroom for scaling. ACI subnet delegation is **mandatory** — the subnet cannot contain any other resource types.
+- **ACR private endpoint subnet** (`/29` = 8 addresses, 3 usable after Azure reservation): Private endpoint for the module-managed ACR. Only needs 1 IP for the PE + Azure reserved IPs.
 
 **CRITICAL**: ACI delegated subnets have networking constraints. Consult [ACI virtual network scenarios](https://learn.microsoft.com/en-us/azure/container-instances/container-instances-virtual-network-concepts) for current delegation requirements and limitations.
 
 ### Subnet Configuration
 
 ```hcl
-subnet_config = {
-  aci_agents = {
-    name             = "aci-agents"
-    address_prefixes = [var.aci_agents_subnet_cidr]
-    delegation = [
-      {
-        name = "Microsoft.ContainerInstance.containerGroups"
-        service_delegation = {
-          name    = "Microsoft.ContainerInstance/containerGroups"
-          actions = ["Microsoft.Network/virtualNetworks/subnets/action"]
-        }
-      }
-    ]
+resource "azurerm_subnet" "aci_agents" {
+  name                 = "aci-agents"
+  resource_group_name  = local.cicd_rg_name
+  virtual_network_name = local.cicd_vnet_name
+  address_prefixes     = [var.aci_agents_subnet_cidr]
+
+  delegation {
+    name = "aci"
+    service_delegation {
+      name    = "Microsoft.ContainerInstance/containerGroups"
+      actions = ["Microsoft.Network/virtualNetworks/subnets/action"]
+    }
   }
-  aci_agents_acr = {
-    name             = "aci-agents-acr"
-    address_prefixes = [var.aci_agents_acr_subnet_cidr]
-  }
+}
+
+resource "azurerm_subnet" "aci_agents_acr" {
+  name                 = "aci-agents-acr"
+  resource_group_name  = local.cicd_rg_name
+  virtual_network_name = local.cicd_vnet_name
+  address_prefixes     = [var.aci_agents_acr_subnet_cidr]
 }
 ```
 
