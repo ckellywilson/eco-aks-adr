@@ -221,11 +221,56 @@ resource "azurerm_role_assignment" "control_plane_to_private_dns_zone" {
 
 Reference: [Use a private DNS zone with AKS](https://learn.microsoft.com/en-us/azure/aks/private-clusters#configure-a-private-dns-zone)
 
-### Spoke VNet DNS Zone Linking — NOT Required
+### Spoke VNet DNS Zone Linking — AKS Auto-Creates
 
-Spoke VNets do **not** need direct links to any private DNS zones. Resolution goes through the hub DNS resolver chain. See the hub spec (`hub-deploy.instructions.md`) for the full architectural rationale and historical context.
+Spoke VNets do **not** need Terraform-managed links to private DNS zones. DNS resolution works through the hub DNS resolver chain without any spoke VNet link.
 
-**If AKS node bootstrap DNS resolution fails**, a spoke VNet link can be re-added as a fallback. Monitor [Azure/AKS#4841](https://github.com/Azure/AKS/issues/4841) and [Azure/AKS#4998](https://github.com/Azure/AKS/issues/4998) for platform-level fixes.
+**However**, the AKS resource provider **automatically creates** a VNet link from the spoke VNet to the `privatelink.{region}.azmk8s.io` DNS zone during private cluster provisioning. This is AKS platform behavior — confirmed via both Terraform deployment and manual `az aks create` testing (no Terraform involved). The AKS RP acts through the **control plane UAMI** to create this link, as verified by Azure Activity Log analysis.
+
+**Key facts**:
+- **Created by**: The AKS RP, acting through the control plane UAMI (not its own first-party identity). The Activity Log shows the UAMI's `principalId` as the caller and its `clientId` as `claims.appid`.
+- **When**: During cluster create and on every cluster start/restart, immediately after writing the API server A record
+- **Cannot be prevented**: The required `Private DNS Zone Contributor` role grants `Microsoft.Network/privateDnsZones/*`, which includes both `A/write` and `virtualNetworkLinks/write` — these permissions are inseparable
+- **Re-created if removed**: If the VNet link is manually deleted and the cluster is restarted, AKS re-creates it
+- **Harmless**: DNS resolution works via the hub resolver chain regardless of whether this link exists
+- **Scope**: Applies only to the AKS DNS zone (`privatelink.{region}.azmk8s.io`), not to ACR, Key Vault, or other private endpoint zones
+- **Not in Terraform state**: Since the AKS RP creates it, Terraform does not manage or track it — no drift risk
+
+Reference: [Hub and spoke with custom DNS for private AKS clusters](https://learn.microsoft.com/en-us/azure/aks/private-clusters#hub-and-spoke-with-custom-dns-for-private-aks-clusters)
+
+> "If you keep the default private DNS zone behavior, AKS tries to link the zone directly to the spoke VNet that hosts the cluster even when the zone is already linked to a hub VNet."
+
+Known issues: [Azure/AKS#4998](https://github.com/Azure/AKS/issues/4998), [Azure/AKS#4841](https://github.com/Azure/AKS/issues/4841)
+
+#### Verifying VNet Link Creator
+
+Use these `az cli` commands to confirm the control plane UAMI created the spoke VNet link:
+
+```bash
+# 1. List VNet links on the AKS private DNS zone
+az network private-dns link vnet list \
+  --resource-group <hub-rg> \
+  --zone-name privatelink.<region>.azmk8s.io \
+  -o table
+
+# 2. Query Activity Log for VNet link write operations
+az monitor activity-log list \
+  --resource-group <hub-rg> \
+  --offset 7d \
+  --query "[?contains(operationName.value || '', 'privateDnsZones/virtualNetworkLinks/write')].{caller:caller, appId:claims.appid, operation:operationName.value, status:status.value, time:eventTimestamp, resource:resourceId}" \
+  -o table
+
+# 3. Look up the control plane UAMI identity
+az identity show \
+  --name <uami-aks-cp-name> \
+  --resource-group <spoke-rg> \
+  --query '{name:name, principalId:principalId, clientId:clientId}' \
+  -o table
+
+# 4. Cross-reference: the Activity Log 'caller' should match the UAMI's principalId,
+#    and 'appId' should match the UAMI's clientId. This confirms the AKS RP acted
+#    through the control plane UAMI to create the VNet link.
+```
 
 ---
 
@@ -244,7 +289,7 @@ Spoke VNets do **not** need direct links to any private DNS zones. Resolution go
 |---|---|---|---|
 | Control Plane UAMI | Kubelet UAMI | `Managed Identity Operator` | AKS manages kubelet identity |
 | Control Plane UAMI | Spoke VNet | `Network Contributor` | AKS manages LBs, NICs, routes |
-| Control Plane UAMI | Hub AKS DNS Zone | `Private DNS Zone Contributor` | BYOD: write A records for API server |
+| Control Plane UAMI | Hub AKS DNS Zone | `Private DNS Zone Contributor` | BYOD: write A records and VNet links for API server (see [AKS auto-creates VNet link](#spoke-vnet-dns-zone-linking--aks-auto-creates)) |
 | Kubelet UAMI | ACR | `AcrPull` | Pull container images |
 | Control Plane UAMI | Key Vault | `Key Vault Secrets User` | Read secrets for workload config |
 | Jump Box VM (SystemAssigned) | AKS Cluster | `Azure Kubernetes Service Cluster User Role` | kubectl access from jump box |

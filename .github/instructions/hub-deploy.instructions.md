@@ -236,7 +236,9 @@ At minimum, for an AKS landing zone, the following zones are needed:
 
 ### VNet Linking Constraint
 
-**CRITICAL**: Private DNS zones MUST be linked to the **hub VNet only**. Spoke VNets do NOT require direct DNS zone links because they use custom DNS pointing to the hub's DNS resolver.
+**CRITICAL**: Private DNS zones are linked to the **hub VNet only** in Terraform. Spoke VNets do NOT require Terraform-managed DNS zone links because they use custom DNS pointing to the hub's DNS resolver.
+
+**Note**: The AKS resource provider will **automatically create** a VNet link from the spoke VNet to the `privatelink.{region}.azmk8s.io` zone at cluster create/start time. This link is created outside of Terraform (by the AKS RP acting through the control plane UAMI) and does not need to be managed here. See the spoke spec for full details.
 
 ```hcl
 virtual_network_links = {
@@ -244,29 +246,36 @@ virtual_network_links = {
     vnetlinkname = "link-{zone}-hub"
     vnetid       = module.hub_vnet.resource_id
   }
-  # NO spoke VNet links here — spokes resolve via DNS resolver
+  # Spoke VNet links are NOT created here — spokes resolve via DNS resolver.
+  # Note: AKS auto-creates a spoke VNet link to the AKS DNS zone at runtime
+  # (see spoke-deploy.instructions.md "Spoke VNet DNS Zone Linking" section).
 }
 ```
 
 This is the [centralized private DNS architecture](https://learn.microsoft.com/en-us/azure/dns/private-resolver-architecture) recommended by Microsoft.
 
-### Spoke VNet DNS Zone Linking — NOT Required
+### Spoke VNet DNS Zone Linking — AKS Auto-Creates
 
-Spoke VNets do **not** need direct links to any private DNS zones. The spoke resolves all private endpoints through the hub DNS resolver chain:
+Spoke VNets do **not** need Terraform-managed links to private DNS zones. The spoke resolves all private endpoints through the hub DNS resolver chain:
 
 ```
 Spoke resource → custom DNS (hub resolver IP) → hub resolver → Azure DNS → private DNS zone (hub VNet-linked) → A record
 ```
 
-A spoke VNet link was previously used as a workaround during AKS deployment debugging. The actual root causes were:
-1. An incorrect AVM module property name (`private_dns_zone_id` instead of `private_dns_zone`) in the AKS `api_server_access_profile`
-2. AKS nodes couldn't reach Ubuntu package repositories through Azure Firewall for container image validation (missing firewall egress rules)
+**However**, the AKS resource provider **automatically creates** a VNet link from the spoke VNet to the `privatelink.{region}.azmk8s.io` DNS zone during private cluster provisioning. This is AKS platform behavior — confirmed via both Terraform deployment and manual `az aks create` testing. The AKS RP acts through the **control plane UAMI** (verified via Azure Activity Log — the UAMI's `principalId` appears as the operation caller).
 
-Neither issue was related to DNS zone linking. Once the property name and firewall rules were corrected, the spoke VNet link was unnecessary.
-
-**If AKS node bootstrap DNS resolution fails** in future deployments, the spoke VNet link can be re-added as a fallback (commented-out code preserved in spoke `main.tf`). Monitor [Azure/AKS#4841](https://github.com/Azure/AKS/issues/4841) and [Azure/AKS#4998](https://github.com/Azure/AKS/issues/4998) for platform-level fixes.
+This auto-created link:
+- **Cannot be prevented**: The required `Private DNS Zone Contributor` role grants `Microsoft.Network/privateDnsZones/*`, which includes both `A/write` and `virtualNetworkLinks/write`
+- **Is re-created on cluster start**: If manually removed, AKS re-creates it on every start/restart
+- **Is harmless**: DNS resolution works via the hub resolver chain regardless
+- **Is not in Terraform state**: No drift risk — the AKS RP creates it outside of Terraform
+- **Applies only to the AKS DNS zone**: ACR, Key Vault, and other private endpoint zones are not affected
 
 Reference: [Hub and spoke with custom DNS for private AKS clusters](https://learn.microsoft.com/en-us/azure/aks/private-clusters#hub-and-spoke-with-custom-dns-for-private-aks-clusters)
+
+Known issues: [Azure/AKS#4998](https://github.com/Azure/AKS/issues/4998), [Azure/AKS#4841](https://github.com/Azure/AKS/issues/4841)
+
+See the spoke spec (`spoke-deploy.instructions.md`) for verification commands to confirm the VNet link creator via Activity Log.
 
 ---
 
@@ -276,10 +285,10 @@ This section defines the complete DNS resolution architecture for the hub-spoke 
 
 ### Design Principles
 
-1. **Centralized DNS control**: All private DNS zones live in the hub resource group, linked only to the hub VNet
-2. **No spoke VNet-to-zone linking** (except the AKS caveat above): Spokes resolve private endpoints via the hub DNS resolver, not via direct zone links
+1. **Centralized DNS control**: All private DNS zones live in the hub resource group, linked to the hub VNet in Terraform
+2. **No Terraform-managed spoke VNet-to-zone linking**: Spokes resolve private endpoints via the hub DNS resolver, not via direct zone links. However, the AKS RP auto-creates a spoke VNet link to the AKS DNS zone at runtime (see [Spoke VNet DNS Zone Linking](#spoke-vnet-dns-zone-linking--aks-auto-creates) above).
 3. **VNet peering ≠ DNS zone linking**: Peering provides network connectivity; DNS resolution is handled separately via custom DNS settings
-4. **BYOD (Bring Your Own DNS) pattern for AKS**: The AKS control plane UAMI writes A records to the centralized private DNS zone
+4. **BYOD (Bring Your Own DNS) pattern for AKS**: The AKS control plane UAMI writes A records and VNet links to the centralized private DNS zone
 
 ### Components
 

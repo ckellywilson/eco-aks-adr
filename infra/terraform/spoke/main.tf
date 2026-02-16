@@ -89,8 +89,10 @@ resource "time_sleep" "wait_for_rbac" {
   create_duration = "90s"
 }
 
-# Spoke VNet DNS zone link REMOVED — not required for peering-only architecture.
-# See spoke-deploy.instructions.md and hub-deploy.instructions.md for DNS architecture details.
+# Spoke VNet DNS zone link is NOT managed by Terraform — the AKS RP auto-creates a VNet link
+# from the spoke VNet to the AKS private DNS zone (privatelink.<region>.azmk8s.io) at cluster
+# create/start time, using the control plane UAMI. This is expected AKS platform behavior.
+# See spoke-deploy.instructions.md "Spoke VNet DNS Zone Linking" section for details.
 
 # Route table for spoke with UDR to hub firewall
 resource "azurerm_route_table" "spoke" {
