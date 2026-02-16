@@ -1,0 +1,88 @@
+variable "subscription_id" {
+  description = "Azure subscription ID"
+  type        = string
+}
+
+variable "environment" {
+  description = "Environment name (dev, staging, prod)"
+  type        = string
+  default     = "dev"
+}
+
+variable "location" {
+  description = "Azure region for deployment"
+  type        = string
+  default     = "eastus2"
+}
+
+variable "spoke_key" {
+  description = "Key in hub spoke_vnets map for the CI/CD landing zone (must match hub prod.tfvars)"
+  type        = string
+  default     = "cicd-agents"
+}
+
+# --- ADO Configuration ---
+
+variable "ado_organization_url" {
+  description = "Azure DevOps organization URL (e.g. https://dev.azure.com/myorg)"
+  type        = string
+
+  validation {
+    condition     = can(regex("^https://dev\\.azure\\.com/.+$", var.ado_organization_url))
+    error_message = "ado_organization_url must be a valid Azure DevOps URL (https://dev.azure.com/<org>)."
+  }
+}
+
+variable "ado_agent_pool_name" {
+  description = "Azure DevOps agent pool name for self-hosted ACI agents"
+  type        = string
+  default     = "aci-cicd-pool"
+}
+
+variable "aci_agent_count" {
+  description = "Number of ACI-based ADO agent instances"
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.aci_agent_count > 0
+    error_message = "aci_agent_count must be greater than 0."
+  }
+}
+
+# --- Networking ---
+
+variable "aci_agents_subnet_cidr" {
+  description = "CIDR for ACI agents subnet"
+  type        = string
+  default     = "10.2.0.0/27"
+}
+
+variable "aci_agents_acr_subnet_cidr" {
+  description = "CIDR for ACR private endpoint subnet"
+  type        = string
+  default     = "10.2.0.32/29"
+}
+
+# --- Platform Key Vault ---
+
+variable "platform_key_vault_id" {
+  description = "Resource ID of the platform Key Vault containing SSH keys and platform secrets"
+  type        = string
+
+  validation {
+    condition     = can(regex("^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.KeyVault/vaults/[^/]+$", var.platform_key_vault_id))
+    error_message = "platform_key_vault_id must be a valid Azure Key Vault resource ID."
+  }
+}
+
+# --- Tags ---
+
+variable "tags" {
+  description = "Tags to apply to all resources"
+  type        = map(string)
+  default = {
+    ManagedBy = "Terraform"
+    Purpose   = "AKS Landing Zone CI/CD"
+  }
+}

@@ -82,6 +82,12 @@ spoke_vnets = {
     resource_group_name = "rg-aks-eus2-prod"
     address_space       = ["10.1.0.0/16"]
   }
+  "cicd-agents" = {
+    hub_managed         = true                      # Hub creates RG + VNet
+    name                = "vnet-cicd-prod-eus2"
+    resource_group_name = "rg-cicd-eus2-prod"
+    address_space       = ["10.2.0.0/24"]           # Small — just ACI agents
+  }
   "spoke-data" = {
     hub_managed         = false                     # Already exists, hub only peers
     name                = "vnet-data-prod-eus2"
@@ -604,7 +610,8 @@ tags = merge(var.tags, {
 
 ### State Management
 - Backend: Azure Storage with Azure AD authentication (`use_azuread_auth = true`)
-- State key: `hub/terraform.tfstate`
+- Container: `tfstate-hub` (each landing zone uses a separate container)
+- State key: `terraform.tfstate`
 - State lock: Azure blob lease (automatic)
 
 ---
@@ -626,11 +633,14 @@ If a spoke deployment creates a DNS zone VNet link and the hub also tries to man
 
 ## Related Specifications
 
+- **CI/CD Landing Zone**: `.github/instructions/cicd-deploy.instructions.md`
+- **Spoke AKS Landing Zone**: `.github/instructions/spoke-deploy.instructions.md`
 - **Terraform Destroy**: `.github/instructions/terraform-destroy.instructions.md`
 - **Terraform Deploy**: `.github/instructions/terraform-deploy.instructions.md`
 - **AVM Usage**: `.github/instructions/azure-verified-modules-terraform.instructions.md`
 - **Hub Terraform Code**: `infra/terraform/hub/`
-- **Spoke Terraform Code**: `infra/terraform/spoke-aks-prod/`
+- **CI/CD Terraform Code**: `infra/terraform/cicd/`
+- **Spoke Terraform Code**: `infra/terraform/spoke/`
 
 ## Reference Documentation
 

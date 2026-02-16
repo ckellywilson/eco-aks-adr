@@ -16,7 +16,7 @@ module "hub_vnet" {
 
   address_space = var.hub_vnet_address_space
 
-  subnets = local.all_subnet_config
+  subnets = local.subnet_config
 
   enable_telemetry = true
   tags             = local.common_tags

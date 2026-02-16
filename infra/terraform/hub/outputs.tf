@@ -114,8 +114,3 @@ output "spoke_vnet_names" {
     for k, v in module.spoke_vnet : k => v.name
   }
 }
-
-output "cicd_agent_pool_name" {
-  description = "ADO agent pool name for self-hosted ACI agents"
-  value       = var.deploy_cicd_agents ? var.ado_agent_pool_name : null
-}

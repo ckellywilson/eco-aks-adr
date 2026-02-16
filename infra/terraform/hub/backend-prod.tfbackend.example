@@ -9,9 +9,13 @@
 #   terraform init \
 #     -backend-config="resource_group_name=rg-terraform-state-prod" \
 #     -backend-config="storage_account_name=<your-storage-account>" \
-#     -backend-config="container_name=terraform-state-prod" \
-#     -backend-config="key=hub/terraform.tfstate" \
+#     -backend-config="container_name=tfstate-hub" \
+#     -backend-config="key=terraform.tfstate" \
 #     -backend-config="use_azuread_auth=true"
+#
+# NOTE: If migrating from a different container/key, use:
+#   terraform init -migrate-state -backend-config=backend-prod.tfbackend
+#   Or use -reconfigure to point to an existing state without migration.
 # ============================================================================
 
 # Azure resource group containing the Terraform state storage account
@@ -21,12 +25,11 @@ resource_group_name  = "rg-terraform-state-prod"
 # Must be an existing storage account in the resource group above
 storage_account_name = "sttfstatexxxxx"
 
-# Container name within the storage account
-container_name       = "terraform-state-prod"
+# Container name within the storage account (one per landing zone)
+container_name       = "tfstate-hub"
 
 # State file path/key within the container
-# Use different keys for different environments (prod, dev, staging, etc)
-key                  = "hub/terraform.tfstate"
+key                  = "terraform.tfstate"
 
 # Authentication method
 # Options:

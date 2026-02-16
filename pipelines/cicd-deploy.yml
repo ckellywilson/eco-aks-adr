@@ -1,16 +1,13 @@
-# Hub Infrastructure Deployment Pipeline
-# Deploys hub Terraform code per .github/instructions/hub-deploy.instructions.md
+# CI/CD Landing Zone Deployment Pipeline
+# Deploys CI/CD Terraform code per .github/instructions/cicd-deploy.instructions.md
 #
-# Prerequisites (one-time manual setup):
-#   1. Run scripts/setup-ado-pipeline.sh to create:
-#      - ARM service connection with Workload Identity Federation
-#      - Platform Key Vault with SSH keys
-#   2. Set pipeline variable PLATFORM_KV_ID to the platform Key Vault resource ID
-#      - Go to Pipelines → hub-deploy → Edit → Variables → New variable
-#      - Name: PLATFORM_KV_ID, Value: /subscriptions/.../resourceGroups/.../providers/Microsoft.KeyVault/vaults/...
+# Prerequisites:
+#   1. Hub infrastructure deployed (hub creates CI/CD RG + VNet + peering)
+#   2. Run scripts/setup-ado-pipeline.sh to create ARM service connection + Platform KV
+#   3. Set pipeline variable PLATFORM_KV_ID to the platform Key Vault resource ID
 #
-# This pipeline always runs on Microsoft-hosted agents.
-# CI/CD agents are deployed separately via cicd-deploy.yml.
+# Bootstrap: This pipeline runs on Microsoft-hosted agents.
+# After deployment, the self-hosted agents it creates serve the spoke pipeline.
 
 trigger:
   branches:
@@ -18,14 +15,14 @@ trigger:
       - main
   paths:
     include:
-      - infra/terraform/hub/**
+      - infra/terraform/cicd/**
 
 pool:
   vmImage: 'ubuntu-latest'
 
 variables:
   - name: TF_WORKING_DIR
-    value: 'infra/terraform/hub'
+    value: 'infra/terraform/cicd'
   - name: ENVIRONMENT
     value: 'prod'
   - name: ARM_USE_OIDC
@@ -50,12 +47,11 @@ stages:
           - task: AzureCLI@2
             displayName: 'Terraform Init & Validate'
             inputs:
-              azureSubscription: 'azure-hub-prod'
+              azureSubscription: 'azure-cicd-prod'
               scriptType: 'bash'
               scriptLocation: 'inlineScript'
               addSpnToEnvironment: true
               inlineScript: |
-                # Export OIDC credentials for Terraform
                 export ARM_CLIENT_ID=$servicePrincipalId
                 export ARM_TENANT_ID=$tenantId
                 export ARM_OIDC_TOKEN=$idToken
@@ -83,7 +79,7 @@ stages:
           - task: AzureCLI@2
             displayName: 'Terraform Plan'
             inputs:
-              azureSubscription: 'azure-hub-prod'
+              azureSubscription: 'azure-cicd-prod'
               scriptType: 'bash'
               scriptLocation: 'inlineScript'
               addSpnToEnvironment: true
@@ -127,7 +123,7 @@ stages:
           - task: AzureCLI@2
             displayName: 'Terraform Apply'
             inputs:
-              azureSubscription: 'azure-hub-prod'
+              azureSubscription: 'azure-cicd-prod'
               scriptType: 'bash'
               scriptLocation: 'inlineScript'
               addSpnToEnvironment: true
@@ -143,28 +139,16 @@ stages:
                 terraform init -backend-config=$(BACKEND_CONFIG)
                 terraform apply -input=false $(Pipeline.Workspace)/tfplan/tfplan
 
-          - task: AzureCLI@2
-            displayName: 'Validate Infrastructure'
-            inputs:
-              azureSubscription: 'azure-hub-prod'
-              scriptType: 'bash'
-              scriptLocation: 'inlineScript'
-              addSpnToEnvironment: true
-              inlineScript: |
-                export ARM_CLIENT_ID=$servicePrincipalId
-                export ARM_TENANT_ID=$tenantId
-                export ARM_OIDC_TOKEN=$idToken
-                export ARM_USE_OIDC=true
-                export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
-
-                chmod +x scripts/validate-networking.sh
-                ./scripts/validate-networking.sh $(ENVIRONMENT) --mode=infra
-
           - script: |
-              echo "=== Post-Deployment: Manual Validation ==="
-              echo "Connect to spoke jump box via Bastion, then run:"
-              echo "  ./scripts/validate-networking.sh $(ENVIRONMENT) --mode=full"
+              cd $(TF_WORKING_DIR)
+              POOL_NAME=$(terraform output -raw agent_pool_name)
+              echo "=== Post-Deployment: Agent Pool Registration ==="
+              echo "Register the UAMI in Azure DevOps:"
+              echo "  1. Go to ADO → Organization Settings → Agent Pools"
+              echo "  2. Create pool '${POOL_NAME}' if it doesn't exist"
+              echo "  3. Register the UAMI client ID with the pool"
               echo ""
-              echo "This validates DNS resolution, AKS connectivity,"
-              echo "and in-cluster networking from within the private network."
-            displayName: 'Print Manual Validation Instructions'
+              echo "Once agents are registered, update spoke-deploy.yml pool to:"
+              echo "  pool:"
+              echo "    name: '${POOL_NAME}'"
+            displayName: 'Print Agent Registration Instructions'

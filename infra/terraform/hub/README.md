@@ -90,20 +90,17 @@ These outputs are exported to `hub-outputs.json` after `terraform apply` and con
 
 ## State Management
 
-Terraform state is stored in Azure Storage:
+Terraform state is stored in Azure Storage with separate containers per landing zone:
 - Storage Account: sttfstatedevd3120d7a
 - Resource Group: rg-terraform-state-dev
-- Containers: terraform-state-dev, terraform-state-prod
+- Containers: `tfstate-hub`, `tfstate-cicd`, `tfstate-spoke`
 
 ### Setting State Container
 
 When initializing, the appropriate container is selected based on the backend config:
 
 ```bash
-# Creates/uses terraform-state-dev container
-terraform init -backend-config="backend-dev.tfbackend"
-
-# Creates/uses terraform-state-prod container
+# Hub state in tfstate-hub container
 terraform init -backend-config="backend-prod.tfbackend"
 ```
 
