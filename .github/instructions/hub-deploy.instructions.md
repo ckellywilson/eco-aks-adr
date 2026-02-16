@@ -610,7 +610,8 @@ tags = merge(var.tags, {
 
 ### State Management
 - Backend: Azure Storage with Azure AD authentication (`use_azuread_auth = true`)
-- State key: `hub/terraform.tfstate`
+- Container: `tfstate-hub` (each landing zone uses a separate container)
+- State key: `terraform.tfstate`
 - State lock: Azure blob lease (automatic)
 
 ---

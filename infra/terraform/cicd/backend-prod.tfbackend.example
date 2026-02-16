@@ -4,5 +4,5 @@
 resource_group_name  = "<terraform_state_resource_group_name>"
 storage_account_name = "<terraform_state_storage_account_name>"
 container_name       = "<terraform_state_container_name>"
-key                  = "cicd/terraform.tfstate"
+key                  = "terraform.tfstate"
 use_azuread_auth     = true

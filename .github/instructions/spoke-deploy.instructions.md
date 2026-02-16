@@ -77,8 +77,8 @@ data "terraform_remote_state" "hub" {
   config = {
     resource_group_name  = "rg-terraform-state-dev"
     storage_account_name = "<backend-storage-account>"
-    container_name       = "terraform-state-prod"
-    key                  = "hub/terraform.tfstate"
+    container_name       = "tfstate-hub"
+    key                  = "terraform.tfstate"
     use_azuread_auth     = true
   }
 }
