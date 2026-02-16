@@ -14,10 +14,18 @@
 #   --mode=full   All sections including DNS resolution, AKS connectivity,
 #                 and in-cluster network tests (requires jump box / private access)
 #
+# Environment Variables:
+#   AZURE_REGION         Azure region for AKS DNS zone derivation (default: eastus2)
+#   HUB_LOCATION_CODE    Hub location abbreviation (default: eus2)
+#   HUB_RG_OVERRIDE      Override hub resource group name (skips derivation)
+#   SPOKE_LOCATION_CODE  Spoke location abbreviation (default: eus2)
+#   SPOKE_RG_OVERRIDE    Override spoke resource group name (skips derivation)
+#
 # Examples:
 #   ./validate-networking.sh prod --mode=infra   # pipeline post-apply validation
 #   ./validate-networking.sh prod --mode=full    # manual from jump box via Bastion
 #   ./validate-networking.sh prod                # defaults to full
+#   AZURE_REGION=westus2 ./validate-networking.sh prod  # non-default region
 # ============================================================================
 
 set -e
@@ -412,7 +420,7 @@ metadata:
 spec:
   containers:
   - name: network-tools
-    image: nicolaka/netshoot:v0.11
+    image: nicolaka/netshoot@sha256:a7c92e1a2fb9287576a16e107166fee7f9925e15d2c1a683dbb1f4370ba9bfe8
     command:
       - sleep
       - "3600"
