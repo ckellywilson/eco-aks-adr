@@ -550,7 +550,16 @@ create_state_storage() {
 
   STATE_SA_NAME="$sa_name"
   STATE_SA_RG="$state_rg"
+  local state_sa_id="/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${state_rg}/providers/Microsoft.Storage/storageAccounts/${sa_name}"
+  STATE_SA_ID="$state_sa_id"
   log "  State SA: $sa_name (in $state_rg)"
+  log ""
+  log "  NEXT STEPS (Terraform state configuration):"
+  log "    1) Update backend-prod.tfbackend in each module:"
+  log "         storage_account_name = \"${sa_name}\""
+  log "         resource_group_name  = \"${state_rg}\""
+  log "    2) Set state_storage_account_id in infra/terraform/cicd/prod.tfvars:"
+  log "         state_storage_account_id = \"${state_sa_id}\""
 }
 
 # ---------------------------------------------------------------------------

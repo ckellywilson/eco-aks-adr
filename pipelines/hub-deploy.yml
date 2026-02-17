@@ -9,8 +9,8 @@
 #      - Go to Pipelines → hub-deploy → Edit → Variables → New variable
 #      - Name: PLATFORM_KV_ID, Value: /subscriptions/.../resourceGroups/.../providers/Microsoft.KeyVault/vaults/...
 #
-# This pipeline runs on self-hosted ACI agents deployed by the CI/CD landing zone.
-# All pipelines use the same self-hosted pool for private network access.
+# This pipeline runs on self-hosted Container App Job agents deployed by the CI/CD landing zone.
+# Bootstrap: CI/CD must be deployed first. Set USE_SELF_HOSTED=true after agents are registered.
 
 trigger:
   branches:
@@ -20,8 +20,12 @@ trigger:
     include:
       - infra/terraform/hub/**
 
-pool:
-  name: 'aci-cicd-pool'
+${{ if eq(variables['USE_SELF_HOSTED'], 'true') }}:
+  pool:
+    name: 'aci-cicd-pool'
+${{ if ne(variables['USE_SELF_HOSTED'], 'true') }}:
+  pool:
+    vmImage: 'ubuntu-latest'
 
 variables:
   - name: TF_WORKING_DIR

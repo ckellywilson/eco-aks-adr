@@ -2,7 +2,7 @@
 # Deploys CI/CD Terraform code per .github/instructions/cicd-deploy.instructions.md
 #
 # Prerequisites:
-#   1. Hub infrastructure deployed (hub creates CI/CD RG + VNet + peering)
+#   1. (Optional) Hub infrastructure for full integration, OR run in bootstrap mode first
 #   2. Run scripts/setup-ado-pipeline.sh to create ARM service connection + Platform KV
 #   3. Set pipeline variable PLATFORM_KV_ID to the platform Key Vault resource ID
 #

@@ -9,8 +9,8 @@
 #      - Go to Pipelines → spoke-deploy → Edit → Variables → New variable
 #      - Name: PLATFORM_KV_ID, Value: /subscriptions/.../resourceGroups/.../providers/Microsoft.KeyVault/vaults/...
 #
-# CRITICAL: Hub infrastructure must be deployed BEFORE spoke deployment
-# This pipeline runs on self-hosted ACI agents for private network access.
+# CRITICAL: Hub infrastructure must be deployed BEFORE spoke deployment.
+# This pipeline REQUIRES self-hosted agents for private AKS API server access.
 
 trigger:
   branches:
