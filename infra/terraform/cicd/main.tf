@@ -155,8 +155,9 @@ resource "azurerm_user_assigned_identity" "cicd_agents" {
   tags = local.common_tags
 }
 
-# Grant ACI agents read access to platform KV (SSH keys, platform secrets)
+# Grant CI/CD agents read access to platform KV (SSH keys, platform secrets)
 resource "azurerm_role_assignment" "cicd_agents_kv_reader" {
+  count                = var.platform_key_vault_id != "" ? 1 : 0
   scope                = var.platform_key_vault_id
   role_definition_name = "Key Vault Secrets User"
   principal_id         = azurerm_user_assigned_identity.cicd_agents.principal_id
@@ -200,17 +201,19 @@ resource "azurerm_private_dns_zone_virtual_network_link" "blob_cicd" {
   tags                  = local.common_tags
 }
 
-# Vault DNS zone for platform KV private endpoint
+# Vault DNS zone for platform KV private endpoint (conditional on KV being configured)
 resource "azurerm_private_dns_zone" "vault" {
+  count               = var.platform_key_vault_id != "" ? 1 : 0
   name                = "privatelink.vaultcore.azure.net"
   resource_group_name = azurerm_resource_group.cicd.name
   tags                = local.common_tags
 }
 
 resource "azurerm_private_dns_zone_virtual_network_link" "vault_cicd" {
+  count                 = var.platform_key_vault_id != "" ? 1 : 0
   name                  = "link-vault-cicd"
   resource_group_name   = azurerm_resource_group.cicd.name
-  private_dns_zone_name = azurerm_private_dns_zone.vault.name
+  private_dns_zone_name = azurerm_private_dns_zone.vault[0].name
   virtual_network_id    = azurerm_virtual_network.cicd.id
   tags                  = local.common_tags
 }
@@ -241,8 +244,9 @@ resource "azurerm_private_endpoint" "state_sa" {
   }
 }
 
-# Platform KV private endpoint
+# Platform KV private endpoint (conditional on KV being configured)
 resource "azurerm_private_endpoint" "platform_kv" {
+  count               = var.platform_key_vault_id != "" ? 1 : 0
   name                = "pe-kvplatform-${var.environment}-${local.location_code}"
   resource_group_name = azurerm_resource_group.cicd.name
   location            = var.location
@@ -258,7 +262,7 @@ resource "azurerm_private_endpoint" "platform_kv" {
 
   private_dns_zone_group {
     name                 = "default"
-    private_dns_zone_ids = [azurerm_private_dns_zone.vault.id]
+    private_dns_zone_ids = [azurerm_private_dns_zone.vault[0].id]
   }
 }
 
@@ -327,9 +331,9 @@ module "cicd_agents" {
   tags             = local.common_tags
 
   depends_on = [
-    azurerm_role_assignment.cicd_agents_kv_reader,
     azurerm_subnet.container_app,
     azurerm_subnet.aci_agents_acr,
     azurerm_nat_gateway_public_ip_association.cicd,
+    azurerm_subnet_nat_gateway_association.container_app,
   ]
 }

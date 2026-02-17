@@ -35,5 +35,5 @@ output "state_sa_pe_ip" {
 
 output "platform_kv_pe_ip" {
   description = "Platform KV private endpoint IP address"
-  value       = azurerm_private_endpoint.platform_kv.private_service_connection[0].private_ip_address
+  value       = var.platform_key_vault_id != "" ? azurerm_private_endpoint.platform_kv[0].private_service_connection[0].private_ip_address : null
 }

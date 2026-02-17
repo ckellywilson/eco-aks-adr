@@ -17,8 +17,14 @@ trigger:
     include:
       - infra/terraform/cicd/**
 
-pool:
-  name: 'aci-cicd-pool'
+# Pool selection: set USE_SELF_HOSTED to 'true' (ADO pipeline variable) after agents
+# are deployed and registered. First run uses MS-hosted agents (bootstrap).
+${{ if eq(variables['USE_SELF_HOSTED'], 'true') }}:
+  pool:
+    name: 'aci-cicd-pool'
+${{ if ne(variables['USE_SELF_HOSTED'], 'true') }}:
+  pool:
+    vmImage: 'ubuntu-latest'
 
 variables:
   - name: TF_WORKING_DIR
