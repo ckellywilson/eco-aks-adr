@@ -40,16 +40,10 @@ spoke_vnets = {
     resource_group_name = "rg-aks-eus2-prod"
     address_space       = ["10.1.0.0/16"]
   }
-  "cicd-agents" = {
-    hub_managed         = true
-    name                = "vnet-cicd-prod-eus2"
-    resource_group_name = "rg-cicd-eus2-prod"
-    address_space       = ["10.2.0.0/24"]
-  }
 }
 
-# Additional spoke address spaces not in spoke_vnets (usually empty)
-spoke_vnet_address_spaces = []
+# Additional spoke address spaces not in spoke_vnets (for firewall rules)
+spoke_vnet_address_spaces = ["10.2.0.0/24"]
 
 # Resource tags
 tags = {

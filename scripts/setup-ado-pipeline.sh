@@ -65,7 +65,7 @@ fail()  { error "$@"; exit 1; }
 ado_api() {
   local method="$1" url="$2" data="${3:-}"
   local args=(-s -w "\n%{http_code}" -u ":$AZURE_DEVOPS_PAT" -H "Content-Type: application/json")
-  [[ "$method" == "POST" || "$method" == "PUT" ]] && args+=(-X "$method" -d "$data")
+  [[ "$method" == "POST" || "$method" == "PUT" || "$method" == "PATCH" ]] && args+=(-X "$method" -d "$data")
   [[ "$method" == "GET" ]] && args+=(-X GET)
 
   local result
@@ -350,12 +350,11 @@ grant_pipeline_access() {
   log "Step 5: Granting pipeline access to service connection..."
 
   ado_api PATCH \
-    "https://dev.azure.com/$ADO_ORG/$ADO_PROJECT/_apis/pipelines/pipelinepermissions?api-version=7.1-preview.1" \
-    "[{
-      \"resource\": { \"id\": \"$ENDPOINT_ID\", \"type\": \"endpoint\" },
+    "https://dev.azure.com/$ADO_ORG/$ADO_PROJECT/_apis/pipelines/pipelinepermissions/endpoint/$ENDPOINT_ID?api-version=7.1-preview.1" \
+    "{
       \"allPipelines\": { \"authorized\": true },
       \"pipelines\": []
-    }]" >/dev/null
+    }" >/dev/null
 
   log "  All pipelines authorized."
 }

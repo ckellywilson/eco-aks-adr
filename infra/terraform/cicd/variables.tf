@@ -15,10 +15,24 @@ variable "location" {
   default     = "eastus2"
 }
 
-variable "spoke_key" {
-  description = "Key in hub spoke_vnets map for the CI/CD landing zone (must match hub prod.tfvars)"
+# --- CI/CD Resource Group & VNet ---
+
+variable "cicd_resource_group_name" {
+  description = "Name of the CI/CD resource group (self-contained, not hub-managed)"
   type        = string
-  default     = "cicd-agents"
+  default     = "rg-cicd-eus2-prod"
+}
+
+variable "cicd_vnet_name" {
+  description = "Name of the CI/CD VNet"
+  type        = string
+  default     = "vnet-cicd-prod-eus2"
+}
+
+variable "cicd_vnet_address_space" {
+  description = "Address space for the CI/CD VNet"
+  type        = list(string)
+  default     = ["10.2.0.0/24"]
 }
 
 # --- ADO Configuration ---

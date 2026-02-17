@@ -39,7 +39,15 @@ The [Azure Cloud Adoption Framework (CAF)](https://learn.microsoft.com/en-us/azu
 
 - **Hub**: The hub owns shared connectivity infrastructure. Mixing build agents into the hub VNet violates the single-responsibility principle and creates blast radius concerns — a misbehaving build could affect DNS, firewall, or peering.
 - **Spoke**: Putting agents in a spoke creates a circular dependency — the spoke pipeline needs agents to deploy, but agents would live inside the spoke being deployed. A dedicated CI/CD landing zone breaks this cycle.
-- **Dedicated CI/CD VNet**: Follows CAF guidance for platform landing zones. The CI/CD VNet is hub-managed (peered, custom DNS), isolated from workload traffic, and independently scalable.
+- **Dedicated CI/CD VNet**: Follows CAF guidance for platform landing zones. The CI/CD VNet is self-contained (own RG, VNet, peering), isolated from workload traffic, and independently scalable.
+
+### CI/CD as Platform Automation Hub
+
+The CI/CD landing zone is the **platform automation hub** — all pipelines requiring private network access run through these self-hosted agents. The agents serve three primary purposes:
+
+1. **Terraform IaC for spoke infrastructure** — Agents read SSH keys and platform secrets from the platform Key Vault (private endpoint) during `terraform apply` for spoke deployments
+2. **Kubernetes workload deployment** — Agents run `helm upgrade` and `kubectl apply` against the private AKS API server, which is only reachable from peered VNets
+3. **Future pipeline workloads** — Any new pipeline requiring private network access (e.g., database migrations, secret rotation, compliance scans) can target the `aci-cicd-pool` without additional infrastructure
 
 ### Hub Dependency
 
@@ -47,8 +55,9 @@ The CI/CD deployment MUST run **after** the hub is fully deployed. The CI/CD lan
 
 | Hub Output | CI/CD Usage |
 |---|---|
-| `spoke_vnet_ids` | VNet ID (hub_managed mode, key: `cicd-agents`) |
-| `spoke_resource_group_names` | RG name (hub_managed mode, key: `cicd-agents`) |
+| `hub_vnet_id` | Remote VNet ID for bidirectional peering |
+| `hub_vnet_name` | Hub VNet name for hub-to-CI/CD peering resource |
+| `dns_resolver_inbound_ip` | CI/CD VNet custom DNS server |
 | `private_dns_zone_ids` | ACR private endpoint DNS (`privatelink.azurecr.io`) |
 | `log_analytics_workspace_id` | ACI container logging and diagnostics |
 
@@ -65,9 +74,9 @@ data "terraform_remote_state" "hub" {
 }
 
 locals {
-  hub_outputs    = data.terraform_remote_state.hub.outputs
-  cicd_rg_name   = local.hub_outputs.spoke_resource_group_names["cicd-agents"]
-  cicd_vnet_id   = local.hub_outputs.spoke_vnet_ids["cicd-agents"]
+  hub_outputs  = data.terraform_remote_state.hub.outputs
+  hub_rg_name  = local.hub_outputs.hub_resource_group_name
+  hub_vnet_name = local.hub_outputs.hub_vnet_name
 }
 ```
 
@@ -77,8 +86,9 @@ Use Azure Verified Modules (AVM) where available. Always check the [AVM Module I
 
 | Component | Purpose | Terraform Module / Resource |
 |---|---|---|
-| CI/CD RG + VNet | Infrastructure container (hub-created) | Consumed via `terraform_remote_state` |
-| Subnets | ACI agents, ACR private endpoint | AVM `avm-res-network-virtualnetwork` (subnet-only mode) |
+| CI/CD RG + VNet | Infrastructure container (self-created) | `azurerm_resource_group` + `azurerm_virtual_network` |
+| VNet Peering | Bidirectional hub ↔ CI/CD | `azurerm_virtual_network_peering` |
+| Subnets | ACI agents, ACR private endpoint | `azurerm_subnet` |
 | ACI-Based ADO Agents | Self-hosted pipeline agents | AVM `avm-ptn-cicd-agents-and-runners` |
 | CI/CD Agent UAMI | Agent authentication with ADO and platform KV | `azurerm_user_assigned_identity` |
 | RBAC Assignment | Key Vault Secrets User on platform KV | `azurerm_role_assignment` |
@@ -87,31 +97,56 @@ Use Azure Verified Modules (AVM) where available. Always check the [AVM Module I
 
 ---
 
-## Hub-Managed Consumption Pattern
+## Self-Contained Resource Pattern
 
-### Resource Group & VNet
+### Resource Group, VNet & Peering
 
-The CI/CD landing zone uses the same hub-managed pattern as the spoke. The hub creates:
-- CI/CD resource group (`rg-cicd-eus2-prod`)
-- CI/CD VNet (`vnet-cicd-prod-eus2`) with custom DNS pointing to hub DNS resolver inbound IP
+Unlike the spoke (which is hub-managed), the CI/CD landing zone creates its **own** resource group, VNet, and bidirectional peering. This keeps CI/CD infrastructure self-contained — the hub does not need a `spoke_vnets` entry for CI/CD.
 
-The CI/CD deployment MUST NOT create its own RG or VNet. Instead, it references them via hub remote state using `var.spoke_key` (default: `cicd-agents`):
+The CI/CD VNet sets custom DNS pointing to the hub DNS resolver inbound IP (from hub remote state), ensuring private endpoint resolution works through the hub DNS chain.
 
 ```hcl
-# Hub prod.tfvars entry for CI/CD landing zone
-spoke_vnets = {
-  "cicd-agents" = {
-    hub_managed         = true
-    name                = "vnet-cicd-prod-eus2"
-    resource_group_name = "rg-cicd-eus2-prod"
-    address_space       = ["10.2.0.0/24"]
-  }
+resource "azurerm_resource_group" "cicd" {
+  name     = var.cicd_resource_group_name
+  location = var.location
+  tags     = local.common_tags
+}
+
+resource "azurerm_virtual_network" "cicd" {
+  name                = var.cicd_vnet_name
+  resource_group_name = azurerm_resource_group.cicd.name
+  location            = azurerm_resource_group.cicd.location
+  address_space       = var.cicd_vnet_address_space
+  dns_servers         = [local.hub_outputs.dns_resolver_inbound_ip]
+  tags                = local.common_tags
+}
+
+resource "azurerm_virtual_network_peering" "cicd_to_hub" {
+  name                      = "peer-cicd-to-hub"
+  resource_group_name       = azurerm_resource_group.cicd.name
+  virtual_network_name      = azurerm_virtual_network.cicd.name
+  remote_virtual_network_id = local.hub_outputs.hub_vnet_id
+  allow_forwarded_traffic   = true
+}
+
+resource "azurerm_virtual_network_peering" "hub_to_cicd" {
+  name                      = "peer-hub-to-cicd"
+  resource_group_name       = local.hub_rg_name
+  virtual_network_name      = local.hub_vnet_name
+  remote_virtual_network_id = azurerm_virtual_network.cicd.id
+  allow_forwarded_traffic   = true
 }
 ```
 
+**Note**: The CI/CD service principal needs `Network Contributor` on the hub VNet (or hub RG) to create the hub-to-CI/CD peering direction.
+
+### Hub Firewall Source Addresses
+
+The CI/CD VNet CIDR (`10.2.0.0/24`) must be included in the hub's `spoke_vnet_address_spaces` variable (not `spoke_vnets`) so that hub firewall rules include CI/CD agents as an allowed source address.
+
 ### Subnet Provisioning
 
-The hub creates the VNet but does **NOT** create CI/CD subnets. Subnets are application-specific and owned by the CI/CD deployment. The CI/CD Terraform code MUST provision subnets directly (for example, using `azurerm_subnet` resources) into the existing hub-created VNet, and MUST NOT attempt to create or manage the VNet resource itself.
+The CI/CD deployment creates subnets into its own VNet using `azurerm_subnet` resources. Subnets are application-specific and owned entirely by the CI/CD deployment.
 
 ---
 
@@ -119,7 +154,7 @@ The hub creates the VNet but does **NOT** create CI/CD subnets. Subnets are appl
 
 ### Address Space
 
-- **CI/CD VNet CIDR**: `10.2.0.0/24` (set by hub in `spoke_vnets` variable)
+- **CI/CD VNet CIDR**: `10.2.0.0/24` (configured in CI/CD `prod.tfvars`)
 
 ### Subnet Layout
 
@@ -140,8 +175,8 @@ The hub creates the VNet but does **NOT** create CI/CD subnets. Subnets are appl
 ```hcl
 resource "azurerm_subnet" "aci_agents" {
   name                 = "aci-agents"
-  resource_group_name  = local.cicd_rg_name
-  virtual_network_name = local.cicd_vnet_name
+  resource_group_name  = azurerm_resource_group.cicd.name
+  virtual_network_name = azurerm_virtual_network.cicd.name
   address_prefixes     = [var.aci_agents_subnet_cidr]
 
   delegation {
@@ -155,8 +190,8 @@ resource "azurerm_subnet" "aci_agents" {
 
 resource "azurerm_subnet" "aci_agents_acr" {
   name                 = "aci-agents-acr"
-  resource_group_name  = local.cicd_rg_name
-  virtual_network_name = local.cicd_vnet_name
+  resource_group_name  = azurerm_resource_group.cicd.name
+  virtual_network_name = azurerm_virtual_network.cicd.name
   address_prefixes     = [var.aci_agents_acr_subnet_cidr]
 }
 ```
@@ -172,8 +207,8 @@ The CI/CD landing zone uses the [AVM CI/CD Agents and Runners pattern module](ht
 | Setting | Value | Rationale |
 |---|---|---|
 | Compute Type | `azure_container_instance` | Lightweight, serverless agents — no VM management overhead |
-| VNet Creation | Disabled (`false`) | Uses hub-created CI/CD VNet |
-| RG Creation | Disabled (`false`) | Uses hub-created CI/CD resource group |
+| VNet Creation | Disabled (`false`) | Uses self-created CI/CD VNet |
+| RG Creation | Disabled (`false`) | Uses self-created CI/CD resource group |
 | Private Networking | Enabled (`true`) | Agents run inside the CI/CD VNet, no public exposure |
 | Container Image | Module default (`use_default_container_image = true`) | Microsoft-maintained image via ACR Tasks — auto-updated |
 | Container CPU | `2` cores | Sufficient for Terraform plan/apply workloads |
@@ -271,7 +306,7 @@ The `platform_key_vault_id` is passed as a pipeline variable (`PLATFORM_KV_ID`),
 
 ## DNS Resolution
 
-The CI/CD VNet uses the same DNS resolution architecture as all other hub-managed spokes. The hub sets custom DNS on the CI/CD VNet pointing to the hub DNS resolver inbound endpoint.
+The CI/CD VNet uses the same DNS resolution architecture as all hub-peered VNets. The CI/CD deployment sets custom DNS on its own VNet pointing to the hub DNS resolver inbound endpoint (see [Self-Contained Resource Pattern](#self-contained-resource-pattern)).
 
 ### Resolution Flow
 
@@ -351,13 +386,14 @@ The CI/CD landing zone sits between hub and spoke in the deployment order:
 Phase 1: Hub deployment (hub pipeline — runs on MS-hosted agents)
   └─→ Hub RG, VNet, Firewall, Bastion, DNS Resolver, Log Analytics
   └─→ Private DNS Zones (linked to hub VNet)
-  └─→ CI/CD RG + VNet (hub_managed, custom DNS → hub resolver)
   └─→ Spoke RG + VNet (hub_managed, custom DNS → hub resolver)
-  └─→ Bidirectional VNet Peering (hub ↔ CI/CD, hub ↔ spoke)
+  └─→ Bidirectional VNet Peering (hub ↔ spoke)
 
 Phase 2: CI/CD deployment (cicd pipeline — runs on MS-hosted agents)
   └─→ Read hub remote state
-  └─→ Subnets (into hub-created CI/CD VNet)
+  └─→ Create CI/CD RG + VNet (custom DNS → hub resolver)
+  └─→ Bidirectional VNet Peering (CI/CD ↔ hub)
+  └─→ Subnets (aci-agents, aci-agents-acr)
   └─→ UAMI identity
   └─→ RBAC: Key Vault Secrets User on platform KV
   └─→ AVM CI/CD Agents module:
@@ -469,12 +505,11 @@ pool: aci-cicd-pool  # Must match agent_pool_name output
 Before deploying CI/CD infrastructure:
 
 1. **Verify hub is deployed** — `terraform_remote_state.hub` must return valid outputs
-2. **Verify hub-created CI/CD RG + VNet exist** — check `spoke_vnet_ids["cicd-agents"]` and `spoke_resource_group_names["cicd-agents"]` outputs
-3. **Verify Azure authentication** — `az account show` confirms correct subscription
-4. **Verify ACR DNS zone exists in hub** — `private_dns_zone_ids` output must include `privatelink.azurecr.io`
-5. **Verify backend storage access** — enable public network access if needed
-6. **Verify ADO organization URL** — ensure `ado_organization_url` is correct in tfvars
-7. **Verify platform Key Vault** — `platform_key_vault_id` must be a valid KV resource ID
+2. **Verify Azure authentication** — `az account show` confirms correct subscription
+3. **Verify ACR DNS zone exists in hub** — `private_dns_zone_ids` output must include `privatelink.azurecr.io`
+4. **Verify backend storage access** — enable public network access if needed
+5. **Verify ADO organization URL** — ensure `ado_organization_url` is correct in tfvars
+6. **Verify platform Key Vault** — `platform_key_vault_id` must be a valid KV resource ID
 
 ---
 
