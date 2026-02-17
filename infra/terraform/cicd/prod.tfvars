@@ -12,14 +12,30 @@ cicd_vnet_address_space  = ["10.2.0.0/24"]
 # ADO configuration
 ado_organization_url = "https://dev.azure.com/modenv496195"
 ado_agent_pool_name  = "aci-cicd-pool"
-aci_agent_count      = 2
+
+# Container App Job settings (KEDA auto-scaling: 0 to N on demand)
+container_app_max_execution_count = 10
+container_app_min_execution_count = 0
+container_app_polling_interval    = 30
+container_app_cpu                 = 2
+container_app_memory              = "4Gi"
 
 # Subnet CIDRs within CI/CD VNet (10.2.0.0/24)
-aci_agents_subnet_cidr     = "10.2.0.0/27"
-aci_agents_acr_subnet_cidr = "10.2.0.32/29"
+container_app_subnet_cidr     = "10.2.0.0/27"
+aci_agents_acr_subnet_cidr    = "10.2.0.32/29"
+private_endpoints_subnet_cidr = "10.2.0.48/28"
+
+# Terraform state storage account (private endpoint for secure state access)
+state_storage_account_id = "/subscriptions/f8a5f387-2f0b-42f5-b71f-5ee02b8967cf/resourceGroups/rg-cicd-eus2-prod/providers/Microsoft.Storage/storageAccounts/sttfstateeus2d2c496b3"
 
 # Platform Key Vault (set via pipeline variable or manually)
 # platform_key_vault_id = "<set-by-pipeline-or-manually>"
+
+# Hub integration (set after hub is deployed; empty = bootstrap mode)
+hub_vnet_id                    = "/subscriptions/f8a5f387-2f0b-42f5-b71f-5ee02b8967cf/resourceGroups/rg-hub-eus2-prod/providers/Microsoft.Network/virtualNetworks/vnet-hub-prod-eus2"
+hub_dns_resolver_ip            = "10.0.6.4"
+hub_acr_dns_zone_id            = "/subscriptions/f8a5f387-2f0b-42f5-b71f-5ee02b8967cf/resourceGroups/rg-hub-eus2-prod/providers/Microsoft.Network/privateDnsZones/privatelink.azurecr.io"
+hub_log_analytics_workspace_id = "/subscriptions/f8a5f387-2f0b-42f5-b71f-5ee02b8967cf/resourceGroups/rg-hub-eus2-prod/providers/Microsoft.OperationalInsights/workspaces/law-hub-prod-eus2"
 
 # Resource tags
 tags = {

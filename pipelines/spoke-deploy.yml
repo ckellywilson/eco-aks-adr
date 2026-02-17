@@ -10,6 +10,7 @@
 #      - Name: PLATFORM_KV_ID, Value: /subscriptions/.../resourceGroups/.../providers/Microsoft.KeyVault/vaults/...
 #
 # CRITICAL: Hub infrastructure must be deployed BEFORE spoke deployment
+# This pipeline runs on self-hosted ACI agents for private network access.
 
 trigger:
   branches:
@@ -20,7 +21,7 @@ trigger:
       - infra/terraform/spoke/**
 
 pool:
-  vmImage: 'ubuntu-latest'
+  name: 'aci-cicd-pool'
 
 variables:
   - name: TF_WORKING_DIR

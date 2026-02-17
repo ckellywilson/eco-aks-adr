@@ -13,8 +13,9 @@
 #   4. Creates a federated credential on the App Registration
 #   5. Grants all pipelines access to the service connection
 #   6. Creates the pipeline definition (GitHub or ADO Git — auto-detected)
-#   7. Creates platform RG + management Key Vault + SSH key pair
-#   8. Sets the agent pool and pipeline variables (PLATFORM_KV_ID)
+#   7. Creates Terraform state storage account + blob containers
+#   8. Creates platform RG + management Key Vault + SSH key pair
+#   9. Sets the agent pool and pipeline variables (PLATFORM_KV_ID)
 #
 # Prerequisites:
 #   - Azure CLI authenticated (`az login`)
@@ -454,10 +455,10 @@ create_pipeline() {
 }
 
 # ---------------------------------------------------------------------------
-# Step 7: Set agent pool and pipeline variables
+# Step 9: Set agent pool and pipeline variables
 # ---------------------------------------------------------------------------
 configure_pipeline() {
-  log "Step 7: Configuring pipeline pool and variables..."
+  log "Step 9: Configuring pipeline pool and variables..."
 
   # Find the Azure Pipelines queue ID (project-scoped)
   local queue_id
@@ -489,6 +490,68 @@ configure_pipeline() {
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Step 7: Create Terraform state storage account + blob containers
+# ---------------------------------------------------------------------------
+create_state_storage() {
+  log "Step 7: Creating Terraform state storage account..."
+
+  local state_rg="rg-cicd-${LOCATION_CODE}-${ENVIRONMENT}"
+  local sa_suffix
+  if command -v md5sum &>/dev/null; then
+    sa_suffix=$(echo "${AZURE_SUBSCRIPTION_ID}-tfstate" | md5sum | cut -c1-8)
+  elif command -v md5 &>/dev/null; then
+    sa_suffix=$(echo "${AZURE_SUBSCRIPTION_ID}-tfstate" | md5 | cut -c1-8)
+  else
+    fail "Neither md5sum nor md5 command found for computing storage account suffix"
+  fi
+  # Azure SA names: 3-24 chars, lowercase alphanumeric only
+  local sa_name="sttfstate${LOCATION_CODE}${sa_suffix}"
+
+  # Create resource group (shared with CI/CD landing zone)
+  if az group show -n "$state_rg" &> /dev/null; then
+    warn "Resource group '$state_rg' already exists. Reusing."
+  else
+    az group create -n "$state_rg" -l "$LOCATION" -o none
+    log "  Created resource group: $state_rg"
+  fi
+
+  # Create storage account
+  if az storage account show -n "$sa_name" -g "$state_rg" &> /dev/null 2>&1; then
+    warn "Storage account '$sa_name' already exists. Reusing."
+  else
+    az storage account create \
+      -n "$sa_name" \
+      -g "$state_rg" \
+      -l "$LOCATION" \
+      --sku Standard_LRS \
+      --kind StorageV2 \
+      --min-tls-version TLS1_2 \
+      --allow-blob-public-access false \
+      --https-only true \
+      -o none
+    log "  Created storage account: $sa_name"
+  fi
+
+  # Create blob containers for each landing zone
+  for container in tfstate-hub tfstate-cicd tfstate-spoke; do
+    if az storage container show -n "$container" --account-name "$sa_name" --auth-mode login &> /dev/null 2>&1; then
+      warn "  Container '$container' already exists. Skipping."
+    else
+      az storage container create \
+        -n "$container" \
+        --account-name "$sa_name" \
+        --auth-mode login \
+        -o none
+      log "  Created container: $container"
+    fi
+  done
+
+  STATE_SA_NAME="$sa_name"
+  STATE_SA_RG="$state_rg"
+  log "  State SA: $sa_name (in $state_rg)"
+}
 
 # ---------------------------------------------------------------------------
 # Step 8: Create platform resource group + management Key Vault + SSH keys
@@ -602,6 +665,7 @@ main() {
   create_federated_credential
   grant_pipeline_access
   create_pipeline
+  create_state_storage
   create_platform_kv
   configure_pipeline
 
@@ -614,15 +678,16 @@ main() {
   log "  Service Conn:  $SERVICE_CONNECTION_NAME (Workload Identity Federation)"
   log "  App Reg:       $APP_ID"
   log "  Repo Type:     $REPO_TYPE"
+  log "  State SA:      $STATE_SA_NAME (in $STATE_SA_RG)"
   log "  Platform KV:   $PLATFORM_KV_ID"
   log ""
   log "  PLATFORM_KV_ID has been set as a pipeline variable."
   log "  To trigger: push to main or run manually in ADO"
   log ""
-  log "  After first hub deploy with deploy_cicd_agents=true:"
+  log "  After first CI/CD deploy with self-hosted agents:"
   log "    1. Register the ACI UAMI as a service principal in your ADO org"
   log "    2. Grant it Admin access on the agent pool"
-  log "    3. Switch pipeline pool from 'Azure Pipelines' to self-hosted pool"
+  log "    3. All pipelines will use self-hosted pool: aci-cicd-pool"
 }
 
 main "$@"

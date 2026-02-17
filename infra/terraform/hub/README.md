@@ -91,8 +91,8 @@ These outputs are exported to `hub-outputs.json` after `terraform apply` and con
 ## State Management
 
 Terraform state is stored in Azure Storage with separate containers per landing zone:
-- Storage Account: sttfstatedevd3120d7a
-- Resource Group: rg-terraform-state-dev
+- Storage Account: sttfstateeus2d2c496b3
+- Resource Group: rg-cicd-eus2-prod
 - Containers: `tfstate-hub`, `tfstate-cicd`, `tfstate-spoke`
 
 ### Setting State Container

@@ -6,8 +6,8 @@
 #   2. Run scripts/setup-ado-pipeline.sh to create ARM service connection + Platform KV
 #   3. Set pipeline variable PLATFORM_KV_ID to the platform Key Vault resource ID
 #
-# Bootstrap: This pipeline runs on Microsoft-hosted agents.
-# After deployment, the self-hosted agents it creates serve the spoke pipeline.
+# Bootstrap: During initial setup, this pipeline runs on Microsoft-hosted agents.
+# After CI/CD agents are deployed and registered, it uses self-hosted agents.
 
 trigger:
   branches:
@@ -18,7 +18,7 @@ trigger:
       - infra/terraform/cicd/**
 
 pool:
-  vmImage: 'ubuntu-latest'
+  name: 'aci-cicd-pool'
 
 variables:
   - name: TF_WORKING_DIR
