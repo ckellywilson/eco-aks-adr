@@ -503,7 +503,7 @@ create_state_storage() {
   if command -v md5sum &>/dev/null; then
     sa_suffix=$(echo "${AZURE_SUBSCRIPTION_ID}-tfstate" | md5sum | cut -c1-8)
   elif command -v md5 &>/dev/null; then
-    sa_suffix=$(echo "${AZURE_SUBSCRIPTION_ID}-tfstate" | md5 | cut -c1-8)
+    sa_suffix=$(echo "${AZURE_SUBSCRIPTION_ID}-tfstate" | md5 -q | cut -c1-8)
   else
     fail "Neither md5sum nor md5 command found for computing storage account suffix"
   fi

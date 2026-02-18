@@ -90,17 +90,20 @@ These outputs are exported to `hub-outputs.json` after `terraform apply` and con
 
 ## State Management
 
-Terraform state is stored in Azure Storage with separate containers per landing zone:
-- Storage Account: sttfstateeus2d2c496b3
-- Resource Group: rg-cicd-eus2-prod
-- Containers: `tfstate-hub`, `tfstate-cicd`, `tfstate-spoke`
+Terraform state is stored in Azure Storage with separate storage accounts per security boundary:
+
+| Storage Account | Resource Group | Container | Pipeline Pool | Access |
+|---|---|---|---|---|
+| `sttfstatehubeus2<suffix>` | `rg-tfstate-hub-eus2-prod` | `tfstate-hub` | MS-hosted | Public |
+| `sttfstateeus2<suffix>` | `rg-cicd-eus2-prod` | `tfstate-cicd`, `tfstate-spoke` | Self-hosted | Private (after lockdown) |
 
 ### Setting State Container
 
-When initializing, the appropriate container is selected based on the backend config:
+When initializing, the appropriate backend config selects the correct SA and container:
 
 ```bash
-# Hub state in tfstate-hub container
+# Hub state — public SA, MS-hosted agents
+cd infra/terraform/hub
 terraform init -backend-config="backend-prod.tfbackend"
 ```
 

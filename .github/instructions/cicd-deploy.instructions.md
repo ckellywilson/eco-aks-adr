@@ -560,9 +560,13 @@ Container App Jobs use KEDA to auto-scale based on the ADO pipeline queue:
 The spoke pipeline YAML references the agent pool name to run on self-hosted agents:
 
 ```yaml
-# All pipelines (hub, cicd, spoke) — runs on self-hosted Container App Job agents
+# CI/CD and spoke pipelines — self-hosted Container App Job agents
 pool:
-  name: 'aci-cicd-pool'  # Name kept for backward compatibility
+  name: 'aci-cicd-pool'
+
+# Hub pipeline — MS-hosted agents (public state SA, no private access needed)
+pool:
+  vmImage: 'ubuntu-latest'
 ```
 
 ---
@@ -595,7 +599,7 @@ az containerapp job list \
 
 # 3. Verify ACR private endpoint resolves
 nslookup <acr-login-server>
-# Should resolve to private IP via DNS zone (hub or CI/CD-owned)
+# Should resolve to private IP via hub DNS zone
 
 # 4. Verify NAT Gateway is attached to Container App subnet
 az network nat gateway list \

@@ -9,8 +9,8 @@ data "terraform_remote_state" "hub" {
   backend = "azurerm"
 
   config = {
-    resource_group_name  = "rg-cicd-eus2-prod"
-    storage_account_name = "sttfstateeus2d2c496b3"
+    resource_group_name  = "rg-tfstate-hub-eus2-prod"
+    storage_account_name = "sttfstatehubeus2d2c496b3"
     container_name       = "tfstate-hub"
     key                  = "terraform.tfstate"
     use_azuread_auth     = true
