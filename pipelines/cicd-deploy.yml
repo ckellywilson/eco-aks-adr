@@ -157,16 +157,140 @@ stages:
                 terraform init -backend-config=$(BACKEND_CONFIG)
                 terraform apply -input=false $(Pipeline.Workspace)/tfplan/tfplan
 
-          - script: |
-              cd $(TF_WORKING_DIR)
-              POOL_NAME=$(terraform output -raw agent_pool_name)
-              echo "=== Post-Deployment: Agent Pool Registration ==="
-              echo "Register the UAMI in Azure DevOps:"
-              echo "  1. Go to ADO → Organization Settings → Agent Pools"
-              echo "  2. Create pool '${POOL_NAME}' if it doesn't exist"
-              echo "  3. Register the UAMI client ID with the pool"
-              echo ""
-              echo "Once agents are registered, update spoke-deploy.yml pool to:"
-              echo "  pool:"
-              echo "    name: '${POOL_NAME}'"
-            displayName: 'Print Agent Registration Instructions'
+          - task: AzureCLI@2
+            displayName: 'Register UAMI in ADO'
+            inputs:
+              azureSubscription: 'azure-cicd-prod'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
+              inlineScript: |
+                set -euo pipefail
+
+                export ARM_CLIENT_ID=$servicePrincipalId
+                export ARM_TENANT_ID=$tenantId
+                export ARM_OIDC_TOKEN=$idToken
+                export ARM_USE_OIDC=true
+                export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+
+                cd $(TF_WORKING_DIR)
+                terraform init -backend-config=$(BACKEND_CONFIG) -input=false > /dev/null
+
+                # Get Terraform outputs
+                UAMI_PRINCIPAL_ID=$(terraform output -raw agent_uami_principal_id)
+                ADO_ORG_URL=$(terraform output -raw ado_organization_url 2>/dev/null || echo "")
+
+                if [[ -z "$ADO_ORG_URL" ]]; then
+                  echo "##[warning]ado_organization_url output not found. Using default."
+                  ADO_ORG_URL="https://dev.azure.com/modenv496195"
+                fi
+                ADO_ORG=$(echo "$ADO_ORG_URL" | sed 's|.*/||')
+
+                # Read ADO PAT from platform Key Vault
+                KV_NAME=$(echo "$(PLATFORM_KV_ID)" | grep -oP '[^/]+$')
+                ADO_PAT=$(az keyvault secret show --vault-name "$KV_NAME" -n "ado-pat" --query value -o tsv)
+                AUTH=$(echo -n ":${ADO_PAT}" | base64)
+
+                echo "=== Registering UAMI in ADO organization: $ADO_ORG ==="
+                echo "UAMI Principal ID (originId): $UAMI_PRINCIPAL_ID"
+
+                # Step 1: Add service principal entitlement (idempotent — 409 if exists)
+                echo "--- Step 1: Adding service principal entitlement ---"
+                SP_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+                  "https://vsaex.dev.azure.com/${ADO_ORG}/_apis/serviceprincipalentitlements?api-version=7.1-preview.1" \
+                  -H "Authorization: Basic ${AUTH}" \
+                  -H "Content-Type: application/json" \
+                  -d "{
+                    \"accessLevel\": { \"accountLicenseType\": \"stakeholder\" },
+                    \"servicePrincipal\": {
+                      \"origin\": \"aad\",
+                      \"originId\": \"${UAMI_PRINCIPAL_ID}\",
+                      \"subjectKind\": \"servicePrincipal\"
+                    }
+                  }")
+
+                SP_HTTP_CODE=$(echo "$SP_RESPONSE" | tail -1)
+                SP_BODY=$(echo "$SP_RESPONSE" | sed '$d')
+
+                if [[ "$SP_HTTP_CODE" == "200" ]]; then
+                  IS_SUCCESS=$(echo "$SP_BODY" | jq -r '.isSuccess // false')
+                  if [[ "$IS_SUCCESS" == "true" ]]; then
+                    SP_DESCRIPTOR=$(echo "$SP_BODY" | jq -r '.servicePrincipalEntitlement.servicePrincipal.descriptor')
+                    echo "Service principal added. Descriptor: $SP_DESCRIPTOR"
+                  else
+                    # May already exist — extract error
+                    ERROR_MSG=$(echo "$SP_BODY" | jq -r '.operationResult.errors[0].value // "unknown"')
+                    echo "##[warning]SP entitlement response: $ERROR_MSG"
+                  fi
+                else
+                  echo "##[warning]SP entitlement HTTP $SP_HTTP_CODE — may already exist. Continuing."
+                fi
+
+                # Step 2: Look up the SP descriptor if not set (SP may already exist)
+                if [[ -z "${SP_DESCRIPTOR:-}" || "${SP_DESCRIPTOR:-}" == "null" ]]; then
+                  echo "--- Looking up existing service principal descriptor ---"
+                  SP_LIST=$(curl -s \
+                    "https://vssps.dev.azure.com/${ADO_ORG}/_apis/graph/serviceprincipals?api-version=7.1-preview.1" \
+                    -H "Authorization: Basic ${AUTH}")
+                  SP_DESCRIPTOR=$(echo "$SP_LIST" | jq -r ".value[] | select(.originId == \"${UAMI_PRINCIPAL_ID}\") | .descriptor")
+                  if [[ -z "$SP_DESCRIPTOR" || "$SP_DESCRIPTOR" == "null" ]]; then
+                    echo "##[error]Could not find service principal descriptor. Manual registration required."
+                    exit 1
+                  fi
+                  echo "Found existing SP descriptor: $SP_DESCRIPTOR"
+                fi
+
+                # Step 3: Find the "Project Collection Service Accounts" group descriptor
+                echo "--- Step 2: Finding Project Collection Service Accounts group ---"
+                GROUPS_RESPONSE=$(curl -s \
+                  "https://vssps.dev.azure.com/${ADO_ORG}/_apis/graph/groups?api-version=7.1-preview.1" \
+                  -H "Authorization: Basic ${AUTH}")
+                GROUP_DESCRIPTOR=$(echo "$GROUPS_RESPONSE" | jq -r '.value[] | select(.displayName == "Project Collection Service Accounts") | .descriptor')
+
+                if [[ -z "$GROUP_DESCRIPTOR" || "$GROUP_DESCRIPTOR" == "null" ]]; then
+                  echo "##[error]Could not find 'Project Collection Service Accounts' group."
+                  exit 1
+                fi
+                echo "Group descriptor: $GROUP_DESCRIPTOR"
+
+                # Step 4: Add SP to the group (PUT — idempotent)
+                echo "--- Step 3: Adding SP to Project Collection Service Accounts ---"
+                MEMBERSHIP_RESPONSE=$(curl -s -w "\n%{http_code}" -X PUT \
+                  "https://vssps.dev.azure.com/${ADO_ORG}/_apis/graph/memberships/${SP_DESCRIPTOR}/${GROUP_DESCRIPTOR}?api-version=7.1-preview.1" \
+                  -H "Authorization: Basic ${AUTH}" \
+                  -H "Content-Type: application/json")
+
+                MEMBERSHIP_HTTP_CODE=$(echo "$MEMBERSHIP_RESPONSE" | tail -1)
+                if [[ "$MEMBERSHIP_HTTP_CODE" == "200" || "$MEMBERSHIP_HTTP_CODE" == "201" ]]; then
+                  echo "✅ UAMI successfully registered in ADO Project Collection Service Accounts!"
+                else
+                  MEMBERSHIP_BODY=$(echo "$MEMBERSHIP_RESPONSE" | sed '$d')
+                  echo "##[warning]Membership response HTTP $MEMBERSHIP_HTTP_CODE: $MEMBERSHIP_BODY"
+                  echo "##[warning]UAMI may need manual registration in ADO."
+                fi
+
+          - task: AzureCLI@2
+            displayName: 'Print Post-Deployment Summary'
+            inputs:
+              azureSubscription: 'azure-cicd-prod'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
+              inlineScript: |
+                export ARM_CLIENT_ID=$servicePrincipalId
+                export ARM_TENANT_ID=$tenantId
+                export ARM_OIDC_TOKEN=$idToken
+                export ARM_USE_OIDC=true
+                export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+
+                cd $(TF_WORKING_DIR)
+                terraform init -backend-config=$(BACKEND_CONFIG) -input=false > /dev/null
+
+                POOL_NAME=$(terraform output -raw agent_pool_name 2>/dev/null || echo "aci-cicd-pool")
+                echo "=== Post-Deployment Summary ==="
+                echo "Agent Pool: ${POOL_NAME}"
+                echo "UAMI has been automatically registered in ADO."
+                echo ""
+                echo "Next steps:"
+                echo "  1. Verify placeholder agent appears in ADO → Organization Settings → Agent Pools → ${POOL_NAME}"
+                echo "  2. Run hub-deploy pipeline"

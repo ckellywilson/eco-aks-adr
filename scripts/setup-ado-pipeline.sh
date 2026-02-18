@@ -8,7 +8,7 @@
 # What this script does:
 #   1. Creates an Azure AD App Registration + Service Principal
 #   2. Grants RBAC roles (Contributor + Storage Blob Data Contributor,
-#      plus User Access Administrator for spoke pipelines)
+#      plus User Access Administrator for spoke and CI/CD pipelines)
 #   3. Creates an ADO service connection (Workload Identity Federation)
 #   4. Creates a federated credential on the App Registration
 #   5. Grants all pipelines access to the service connection
@@ -713,6 +713,15 @@ create_platform_kv() {
     rm -rf "$tmpdir"
     log "  Generated SSH key pair and stored in Key Vault"
   fi
+
+  # Store ADO PAT in Key Vault (for pipeline UAMI registration automation)
+  local existing_pat
+  existing_pat=$(az keyvault secret show --vault-name "$kv_name" -n "ado-pat" --query "value" -o tsv 2>/dev/null || true)
+  if [[ -n "$existing_pat" ]]; then
+    warn "ADO PAT already exists in Key Vault. Updating with current value."
+  fi
+  az keyvault secret set --vault-name "$kv_name" -n "ado-pat" --value "$AZURE_DEVOPS_PAT" -o none
+  log "  Stored ADO PAT in Key Vault as 'ado-pat'"
 
   log "  Platform KV ID: $PLATFORM_KV_ID"
 }

@@ -13,6 +13,11 @@ output "agent_pool_name" {
   value       = var.ado_agent_pool_name
 }
 
+output "ado_organization_url" {
+  description = "ADO organization URL"
+  value       = var.ado_organization_url
+}
+
 output "agent_uami_id" {
   description = "CI/CD agent UAMI resource ID"
   value       = azurerm_user_assigned_identity.cicd_agents.id
