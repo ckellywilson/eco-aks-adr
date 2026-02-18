@@ -52,15 +52,6 @@ resource "azurerm_virtual_network_peering" "hub_to_cicd" {
 }
 
 # State moves: peering changed from non-indexed to count-based
-moved {
-  from = azurerm_virtual_network_peering.cicd_to_hub
-  to   = azurerm_virtual_network_peering.cicd_to_hub[0]
-}
-moved {
-  from = azurerm_virtual_network_peering.hub_to_cicd
-  to   = azurerm_virtual_network_peering.hub_to_cicd[0]
-}
-
 # --- Subnets ---
 # Container App Environment subnet — replaces ACI agents subnet
 resource "azurerm_subnet" "container_app" {

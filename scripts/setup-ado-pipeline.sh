@@ -693,9 +693,9 @@ main() {
   log "  PLATFORM_KV_ID has been set as a pipeline variable."
   log "  To trigger: push to main or run manually in ADO"
   log ""
-  log "  After first CI/CD deploy with self-hosted agents:"
-  log "    1. Register the ACI UAMI as a service principal in your ADO org"
-  log "    2. Grant it Admin access on the agent pool"
+  log "  After first CI/CD deploy with Container App Job agents:"
+  log "    1. Register the CI/CD UAMI as a service principal in your ADO org"
+  log "    2. Add it to the Project Collection Service Accounts group"
   log "    3. All pipelines will use self-hosted pool: aci-cicd-pool"
 }
 
