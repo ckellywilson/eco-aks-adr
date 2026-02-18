@@ -27,12 +27,6 @@ parameters:
     type: boolean
     default: true
 
-pool:
-  ${{ if eq(parameters.useSelfHosted, true) }}:
-    name: 'aci-cicd-pool'
-  ${{ else }}:
-    vmImage: 'ubuntu-latest'
-
 variables:
   - name: TF_WORKING_DIR
     value: 'infra/terraform/hub'
@@ -51,6 +45,11 @@ stages:
     jobs:
       - job: Validate
         displayName: 'Format & Validate'
+        pool:
+          ${{ if eq(parameters.useSelfHosted, true) }}:
+            name: 'aci-cicd-pool'
+          ${{ else }}:
+            vmImage: 'ubuntu-latest'
         steps:
           - task: TerraformInstaller@1
             displayName: 'Install Terraform'
@@ -84,6 +83,11 @@ stages:
     jobs:
       - job: Plan
         displayName: 'Generate Plan'
+        pool:
+          ${{ if eq(parameters.useSelfHosted, true) }}:
+            name: 'aci-cicd-pool'
+          ${{ else }}:
+            vmImage: 'ubuntu-latest'
         steps:
           - task: TerraformInstaller@1
             displayName: 'Install Terraform'
@@ -124,6 +128,11 @@ stages:
     jobs:
       - job: Apply
         displayName: 'Apply Infrastructure'
+        pool:
+          ${{ if eq(parameters.useSelfHosted, true) }}:
+            name: 'aci-cicd-pool'
+          ${{ else }}:
+            vmImage: 'ubuntu-latest'
         steps:
           - task: TerraformInstaller@1
             displayName: 'Install Terraform'
