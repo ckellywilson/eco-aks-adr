@@ -105,7 +105,7 @@ Use Azure Verified Modules (AVM) where available. Always check the [AVM Module I
 | RBAC Assignment | Key Vault Secrets User on platform KV | `azurerm_role_assignment` |
 | NAT Gateway | Container App outbound connectivity (self-managed) | `azurerm_nat_gateway` + `azurerm_nat_gateway_public_ip_association` + `azurerm_subnet_nat_gateway_association` |
 | ACR (module-managed) | Agent container image registry with private endpoint | Created by AVM module (PE wired to hub or CI/CD-owned DNS zone) |
-| State Storage Account | Terraform state backend co-located in CI/CD RG | `azurerm_storage_account` with private endpoint |
+| State Storage Account PE | Private endpoint to script-created state SA | `azurerm_private_endpoint` (SA created by `scripts/setup-ado-pipeline.sh`) |
 | Platform KV Private Endpoint | Private access to platform Key Vault from CI/CD VNet | `azurerm_private_endpoint` |
 | CI/CD-Owned DNS Zones | `privatelink.blob.core.windows.net`, `privatelink.vaultcore.azure.net` (ACR zone conditional) | `azurerm_private_dns_zone` + VNet links |
 
@@ -136,7 +136,7 @@ resource "azurerm_virtual_network" "cicd" {
   resource_group_name = azurerm_resource_group.cicd.name
   location            = azurerm_resource_group.cicd.location
   address_space       = var.cicd_vnet_address_space
-  dns_servers         = var.hub_dns_resolver_inbound_ip != "" ? [var.hub_dns_resolver_inbound_ip] : []
+  dns_servers         = var.hub_dns_resolver_ip != "" ? [var.hub_dns_resolver_ip] : []
   tags                = local.common_tags
 }
 
@@ -260,15 +260,15 @@ The operator does NOT need to manage container images manually. Setting `use_def
 
 ### ACR Private Endpoint
 
-The module-managed ACR uses a private endpoint wired to either the hub's or CI/CD-owned `privatelink.azurecr.io` DNS zone:
+The module-managed ACR uses a private endpoint. DNS zone creation is always disabled in the module — instead, the CI/CD deployment creates its own `privatelink.azurecr.io` zone at bootstrap (or uses the hub's zone on Day 2) and supplies the resolved zone ID:
 
 ```hcl
-container_registry_private_dns_zone_creation_enabled = var.hub_acr_dns_zone_id == "" ? true : false
-container_registry_dns_zone_id                       = var.hub_acr_dns_zone_id != "" ? var.hub_acr_dns_zone_id : null
+container_registry_private_dns_zone_creation_enabled = false
+container_registry_dns_zone_id                       = local.acr_dns_zone_id  # Hub zone or CI/CD-owned zone
 container_registry_private_endpoint_subnet_id        = azurerm_subnet.aci_agents_acr.id
 ```
 
-**Key**: When the hub is available and provides a `privatelink.azurecr.io` zone, the module uses it (DNS zone creation disabled). In bootstrap mode (no hub), the module creates its own ACR DNS zone linked to the CI/CD VNet.
+**Key**: `local.acr_dns_zone_id` resolves to the hub's zone when `hub_acr_dns_zone_id` is provided, or the CI/CD-owned `azurerm_private_dns_zone.acr[0].id` at bootstrap.
 
 ### ADO Configuration
 

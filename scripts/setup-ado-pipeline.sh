@@ -551,7 +551,7 @@ create_state_storage() {
   local cicd_sa_id="/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${cicd_state_rg}/providers/Microsoft.Storage/storageAccounts/${cicd_sa_name}"
   STATE_SA_ID="$cicd_sa_id"
 
-  # --- Hub+Spoke state SA (always private, self-hosted agents only) ---
+  # --- Hub+Spoke state SA (private after CI/CD PE + DNS are in place) ---
   local hubspoke_state_rg="rg-tfstate-${LOCATION_CODE}-${ENVIRONMENT}"
   local hubspoke_sa_name="sttfstate${LOCATION_CODE}${sa_suffix}"
 

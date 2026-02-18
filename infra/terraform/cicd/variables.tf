@@ -126,7 +126,7 @@ variable "state_storage_account_id" {
 }
 
 variable "hub_spoke_state_storage_account_id" {
-  description = "Resource ID of the Hub+Spoke state storage account for private endpoint (Day 2 — after hub exists)"
+  description = "Resource ID of the Hub+Spoke state storage account for private endpoint. Provide when this SA exists and you want CI/CD to create a PE (can be set at bootstrap or Day 2)."
   type        = string
   default     = ""
 }
@@ -150,27 +150,42 @@ variable "hub_dns_resolver_ip" {
   default     = ""
 
   validation {
-    condition     = var.hub_dns_resolver_ip == "" || can(regex("^\\d+\\.\\d+\\.\\d+\\.\\d+$", var.hub_dns_resolver_ip))
-    error_message = "hub_dns_resolver_ip must be empty or a valid IPv4 address."
+    condition     = var.hub_dns_resolver_ip == "" || (can(regex("^\\d+\\.\\d+\\.\\d+\\.\\d+$", var.hub_dns_resolver_ip)) && var.hub_vnet_id != "")
+    error_message = "hub_dns_resolver_ip must be empty or a valid IPv4 address, and when set hub_vnet_id must also be provided."
   }
 }
 
 variable "hub_acr_dns_zone_id" {
-  description = "Hub privatelink.azurecr.io DNS zone ID. Empty = CI/CD creates its own zone (bootstrap mode)."
+  description = "Hub privatelink.azurecr.io DNS zone ID. Empty = CI/CD creates its own zone (bootstrap mode). Requires hub_dns_resolver_ip when set."
   type        = string
   default     = ""
+
+  validation {
+    condition     = var.hub_acr_dns_zone_id == "" || var.hub_dns_resolver_ip != ""
+    error_message = "hub_acr_dns_zone_id requires hub_dns_resolver_ip (and hub_vnet_id) to be set — hub zones are only resolvable via the hub DNS resolver."
+  }
 }
 
 variable "hub_blob_dns_zone_id" {
-  description = "Hub privatelink.blob.core.windows.net DNS zone ID. Empty = CI/CD creates its own zone (bootstrap mode)."
+  description = "Hub privatelink.blob.core.windows.net DNS zone ID. Empty = CI/CD creates its own zone (bootstrap mode). Requires hub_dns_resolver_ip when set."
   type        = string
   default     = ""
+
+  validation {
+    condition     = var.hub_blob_dns_zone_id == "" || var.hub_dns_resolver_ip != ""
+    error_message = "hub_blob_dns_zone_id requires hub_dns_resolver_ip (and hub_vnet_id) to be set — hub zones are only resolvable via the hub DNS resolver."
+  }
 }
 
 variable "hub_vault_dns_zone_id" {
-  description = "Hub privatelink.vaultcore.azure.net DNS zone ID. Empty = CI/CD creates its own zone (bootstrap mode)."
+  description = "Hub privatelink.vaultcore.azure.net DNS zone ID. Empty = CI/CD creates its own zone (bootstrap mode). Requires hub_dns_resolver_ip when set."
   type        = string
   default     = ""
+
+  validation {
+    condition     = var.hub_vault_dns_zone_id == "" || var.hub_dns_resolver_ip != ""
+    error_message = "hub_vault_dns_zone_id requires hub_dns_resolver_ip (and hub_vnet_id) to be set — hub zones are only resolvable via the hub DNS resolver."
+  }
 }
 
 variable "hub_log_analytics_workspace_id" {

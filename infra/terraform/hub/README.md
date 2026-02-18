@@ -95,7 +95,7 @@ Terraform state is stored in Azure Storage with separate storage accounts per se
 | Storage Account | Resource Group | Container | Pipeline Pool | Access |
 |---|---|---|---|---|
 | `sttfstatecicdeus2<suffix>` | `rg-cicd-eus2-prod` | `tfstate-cicd` | MS-hosted (bootstrap), self-hosted (Day 2+) | Public at bootstrap, private after lockdown |
-| `sttfstateeus2<suffix>` | `rg-tfstate-eus2-prod` | `tfstate-hub`, `tfstate-spoke` | Self-hosted | Always private (PE from CI/CD VNet) |
+| `sttfstateeus2<suffix>` | `rg-tfstate-eus2-prod` | `tfstate-hub`, `tfstate-spoke` | Self-hosted | Public at bootstrap, private after lockdown (PE from CI/CD VNet) |
 
 ### Setting State Container
 
