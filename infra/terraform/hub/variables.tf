@@ -158,12 +158,13 @@ variable "admin_username" {
 }
 
 variable "platform_key_vault_id" {
-  description = "Resource ID of the platform Key Vault containing SSH keys and platform secrets (created by setup-ado-pipeline.sh)"
+  description = "Resource ID of the platform Key Vault containing SSH keys and platform secrets. Required when deploy_jumpbox = true."
   type        = string
+  default     = ""
 
   validation {
-    condition     = can(regex("^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.KeyVault/vaults/[^/]+$", var.platform_key_vault_id))
-    error_message = "platform_key_vault_id must be a valid Azure Key Vault resource ID in the format /subscriptions/{subId}/resourceGroups/{rg}/providers/Microsoft.KeyVault/vaults/{vaultName}."
+    condition     = var.deploy_jumpbox ? can(regex("^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.KeyVault/vaults/[^/]+$", var.platform_key_vault_id)) : (var.platform_key_vault_id == "" || can(regex("^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.KeyVault/vaults/[^/]+$", var.platform_key_vault_id)))
+    error_message = "When deploy_jumpbox = true, platform_key_vault_id must be a valid Azure Key Vault resource ID. Otherwise it may be empty or a valid ID."
   }
 }
 
