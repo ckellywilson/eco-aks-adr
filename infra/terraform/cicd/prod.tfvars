@@ -26,7 +26,7 @@ aci_agents_acr_subnet_cidr    = "10.2.0.32/29"
 private_endpoints_subnet_cidr = "10.2.0.48/28"
 
 # CI/CD Terraform state storage account (PE for self-hosted agent access)
-state_storage_account_id = "/subscriptions/f8a5f387-2f0b-42f5-b71f-5ee02b8967cf/resourceGroups/rg-cicd-eus2-prod/providers/Microsoft.Storage/storageAccounts/sttfstatecicdeus2d2c496b3"
+state_storage_account_id = "/subscriptions/f8a5f387-2f0b-42f5-b71f-5ee02b8967cf/resourceGroups/rg-cicd-eus2-prod/providers/Microsoft.Storage/storageAccounts/stcicdeus2d2c496b3"
 
 # Platform Key Vault (set via pipeline variable or manually)
 # platform_key_vault_id = "<set-by-pipeline-or-manually>"

@@ -9,9 +9,9 @@
 #      - Go to Pipelines → hub-deploy → Edit → Variables → New variable
 #      - Name: PLATFORM_KV_ID, Value: /subscriptions/.../resourceGroups/.../providers/Microsoft.KeyVault/vaults/...
 #
-# Hub pipeline runs on self-hosted agents (Container App Jobs in CI/CD VNet).
+# Hub pipeline defaults to self-hosted agents (Container App Jobs in CI/CD VNet).
 # Hub+Spoke state SA is public at bootstrap; lock down after CI/CD PE + DNS are in place.
-# Requires CI/CD bootstrap to be completed first (agents must exist).
+# Set USE_SELF_HOSTED=false in ADO pipeline variables if agents don't exist yet.
 
 trigger:
   branches:
@@ -21,8 +21,14 @@ trigger:
     include:
       - infra/terraform/hub/**
 
-pool:
-  name: 'aci-cicd-pool'
+# Pool selection: defaults to self-hosted. Set USE_SELF_HOSTED=false (ADO pipeline
+# variable) only if CI/CD bootstrap hasn't completed yet.
+${{ if ne(variables['USE_SELF_HOSTED'], 'false') }}:
+  pool:
+    name: 'aci-cicd-pool'
+${{ if eq(variables['USE_SELF_HOSTED'], 'false') }}:
+  pool:
+    vmImage: 'ubuntu-latest'
 
 variables:
   - name: TF_WORKING_DIR

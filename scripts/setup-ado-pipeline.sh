@@ -510,7 +510,7 @@ create_state_storage() {
 
   # --- CI/CD state SA (public at bootstrap, private after Day 2) ---
   local cicd_state_rg="rg-cicd-${LOCATION_CODE}-${ENVIRONMENT}"
-  local cicd_sa_name="sttfstatecicd${LOCATION_CODE}${sa_suffix}"
+  local cicd_sa_name="stcicd${LOCATION_CODE}${sa_suffix}"
 
   if az group show -n "$cicd_state_rg" &> /dev/null; then
     warn "Resource group '$cicd_state_rg' already exists. Reusing."
@@ -597,7 +597,7 @@ create_state_storage() {
 
   log ""
   log "  CI/CD state SA:     $cicd_sa_name (in $cicd_state_rg) — public at bootstrap, lock down after agents exist"
-  log "  Hub+Spoke state SA: $hubspoke_sa_name (in $hubspoke_state_rg) — always private, PE from CI/CD VNet"
+  log "  Hub+Spoke state SA: $hubspoke_sa_name (in $hubspoke_state_rg) — public at bootstrap, lock down after PE exists"
   log ""
   log "  NEXT STEPS (Terraform backend configuration):"
   log "    1) CI/CD backend (infra/terraform/cicd/backend-prod.tfbackend):"
