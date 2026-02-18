@@ -108,12 +108,13 @@ variable "private_endpoints_subnet_cidr" {
 # --- Platform Key Vault ---
 
 variable "platform_key_vault_id" {
-  description = "Resource ID of the platform Key Vault containing SSH keys and platform secrets"
+  description = "Resource ID of the platform Key Vault containing SSH keys and platform secrets. Empty at bootstrap if KV doesn't exist yet."
   type        = string
+  default     = ""
 
   validation {
-    condition     = can(regex("^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.KeyVault/vaults/[^/]+$", var.platform_key_vault_id))
-    error_message = "platform_key_vault_id must be a valid Azure Key Vault resource ID."
+    condition     = var.platform_key_vault_id == "" || can(regex("^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.KeyVault/vaults/[^/]+$", var.platform_key_vault_id))
+    error_message = "platform_key_vault_id must be empty or a valid Azure Key Vault resource ID."
   }
 }
 

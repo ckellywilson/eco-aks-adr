@@ -59,36 +59,26 @@ The hub dependency is **optional**. The CI/CD landing zone supports a **bootstra
 3. **CI/CD Day 2** — re-apply with hub variables populated to add peering, custom DNS, hub DNS zone integration
 4. **Spoke** — deploys into hub-managed RG/VNet using self-hosted agents
 
-**Full integration mode**: When the hub is deployed first, the CI/CD landing zone reads hub outputs via `terraform_remote_state` or variables to get:
+**Full integration mode**: When the hub is deployed, hub output values are passed to the CI/CD module as input variables (typically via `prod.tfvars`). The CI/CD code does **not** use `terraform_remote_state` — all hub values are explicitly wired as variables:
 
-| Hub Output | CI/CD Usage | Required? |
-|---|---|---|
-| `hub_vnet_id` | Remote VNet ID for bidirectional peering | Optional |
-| `hub_vnet_name` | Hub VNet name for hub-to-CI/CD peering resource | Optional |
-| `dns_resolver_inbound_ip` | CI/CD VNet custom DNS server | Optional |
-| `private_dns_zone_ids` | ACR private endpoint DNS (`privatelink.azurecr.io`) | Optional |
-| `log_analytics_workspace_id` | Container App Job logging and diagnostics | Optional |
+| Hub Output | CI/CD Variable | CI/CD Usage | Required? |
+|---|---|---|---|
+| `hub_vnet_id` | `hub_vnet_id` | Remote VNet ID for bidirectional peering | Optional |
+| `dns_resolver_inbound_ip` | `hub_dns_resolver_ip` | CI/CD VNet custom DNS server | Optional |
+| `private_dns_zone_ids["privatelink.azurecr.io"]` | `hub_acr_dns_zone_id` | ACR private endpoint DNS | Optional |
+| `private_dns_zone_ids["privatelink.blob..."]` | `hub_blob_dns_zone_id` | Blob storage private endpoint DNS | Optional |
+| `private_dns_zone_ids["privatelink.vaultcore..."]` | `hub_vault_dns_zone_id` | Key Vault private endpoint DNS | Optional |
+| `log_analytics_workspace_id` | `hub_log_analytics_workspace_id` | Container App Job logging | Optional |
 
-When hub values are not provided, CI/CD uses Azure default DNS and creates its own `privatelink.azurecr.io` zone.
+When hub values are not provided (empty strings), CI/CD uses Azure default DNS and creates its own private DNS zones (`privatelink.azurecr.io`, `privatelink.blob.core.windows.net`, `privatelink.vaultcore.azure.net`).
 
 ```hcl
-data "terraform_remote_state" "hub" {
-  backend = "azurerm"
-  config = {
-    resource_group_name  = "rg-terraform-state-dev"
-    storage_account_name = "<backend-storage-account>"
-    container_name       = "tfstate-hub"
-    key                  = "terraform.tfstate"
-    use_azuread_auth     = true
-  }
-}
-
-locals {
-  hub_outputs   = data.terraform_remote_state.hub.outputs
-  hub_rg_name   = local.hub_outputs.hub_resource_group_name
-  hub_vnet_name = local.hub_outputs.hub_vnet_name
-  # Hub integration is conditional — empty values skip peering/DNS
-}
+# prod.tfvars — hub values populated at Day 2 (after hub exists)
+hub_vnet_id              = "/subscriptions/.../virtualNetworks/vnet-hub-prod-eus2"
+hub_dns_resolver_ip      = "10.0.6.4"
+hub_acr_dns_zone_id      = "/subscriptions/.../privateDnsZones/privatelink.azurecr.io"
+hub_blob_dns_zone_id     = "/subscriptions/.../privateDnsZones/privatelink.blob.core.windows.net"
+hub_vault_dns_zone_id    = "/subscriptions/.../privateDnsZones/privatelink.vaultcore.azure.net"
 ```
 
 ### Component Inventory

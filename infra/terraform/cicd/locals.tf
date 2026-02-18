@@ -22,10 +22,11 @@ locals {
   state_sa_enabled           = var.state_storage_account_id != ""
   hub_spoke_state_sa_enabled = var.hub_spoke_state_storage_account_id != ""
 
-  # Resolved DNS zone IDs — use hub zones when available, CI/CD-owned zones otherwise
-  blob_dns_zone_id  = local.use_hub_blob_zone ? var.hub_blob_dns_zone_id : azurerm_private_dns_zone.blob[0].id
-  vault_dns_zone_id = local.use_hub_vault_zone ? var.hub_vault_dns_zone_id : azurerm_private_dns_zone.vault[0].id
-  acr_dns_zone_id   = local.use_hub_acr_zone ? var.hub_acr_dns_zone_id : azurerm_private_dns_zone.acr[0].id
+  # Resolved DNS zone IDs — use hub zones when available, CI/CD-owned zones otherwise.
+  # one() safely returns null when the counted resource doesn't exist (count = 0).
+  blob_dns_zone_id  = local.use_hub_blob_zone ? var.hub_blob_dns_zone_id : one(azurerm_private_dns_zone.blob[*].id)
+  vault_dns_zone_id = local.use_hub_vault_zone ? var.hub_vault_dns_zone_id : one(azurerm_private_dns_zone.vault[*].id)
+  acr_dns_zone_id   = local.use_hub_acr_zone ? var.hub_acr_dns_zone_id : one(azurerm_private_dns_zone.acr[*].id)
 
   common_tags = merge(
     var.tags,
