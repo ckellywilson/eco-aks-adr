@@ -429,7 +429,11 @@ resource "azurerm_virtual_network_peering" "spoke_to_hub" {
     ? azurerm_resource_group.spoke[each.key].name
     : each.value.resource_group_name
   )
-  virtual_network_name         = each.value.name
+  virtual_network_name = (
+    each.value.hub_managed
+    ? module.spoke_vnet[each.key].name
+    : each.value.name
+  )
   remote_virtual_network_id    = module.hub_vnet.resource_id
   allow_virtual_network_access = true
   allow_forwarded_traffic      = true
