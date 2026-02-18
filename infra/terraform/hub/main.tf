@@ -468,7 +468,7 @@ resource "azurerm_linux_virtual_machine" "hub_jumpbox" {
 
   admin_ssh_key {
     username   = var.admin_username
-    public_key = data.azurerm_key_vault_secret.ssh_public_key.value
+    public_key = data.azurerm_key_vault_secret.ssh_public_key[0].value
   }
 
   os_disk {
