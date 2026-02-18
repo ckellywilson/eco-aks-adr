@@ -163,8 +163,8 @@ variable "platform_key_vault_id" {
   default     = ""
 
   validation {
-    condition     = var.platform_key_vault_id == "" || can(regex("^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.KeyVault/vaults/[^/]+$", var.platform_key_vault_id))
-    error_message = "platform_key_vault_id must be empty or a valid Azure Key Vault resource ID."
+    condition     = var.deploy_jumpbox ? can(regex("^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.KeyVault/vaults/[^/]+$", var.platform_key_vault_id)) : (var.platform_key_vault_id == "" || can(regex("^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.KeyVault/vaults/[^/]+$", var.platform_key_vault_id)))
+    error_message = "When deploy_jumpbox = true, platform_key_vault_id must be a valid Azure Key Vault resource ID. Otherwise it may be empty or a valid ID."
   }
 }
 
