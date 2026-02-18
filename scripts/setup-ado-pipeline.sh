@@ -221,9 +221,9 @@ grant_rbac() {
   # Spoke pipelines create azurerm_role_assignment resources (e.g., AKS UAMI → DNS zone,
   # kubelet → AcrPull, control plane → Key Vault). This requires
   # Microsoft.Authorization/roleAssignments/write, which Contributor does not include.
-  if [[ "$PIPELINE_NAME" == *spoke* ]]; then
+  if [[ "$PIPELINE_NAME" == *spoke* || "$PIPELINE_NAME" == *cicd* ]]; then
     roles+=("User Access Administrator")
-    log "  Spoke pipeline detected — adding User Access Administrator role"
+    log "  Spoke/CI/CD pipeline detected — adding User Access Administrator role"
   fi
 
   for role in "${roles[@]}"; do
