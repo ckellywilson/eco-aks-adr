@@ -10,7 +10,7 @@ data "terraform_remote_state" "hub" {
 
   config = {
     resource_group_name  = "rg-tfstate-eus2-prod"
-    storage_account_name = "sttfstateeus2d2c496b3"
+    storage_account_name = "sttfstateeus2257fb243"
     container_name       = "tfstate-hub"
     key                  = "terraform.tfstate"
     use_azuread_auth     = true
