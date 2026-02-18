@@ -48,26 +48,47 @@ variable "ado_organization_url" {
 }
 
 variable "ado_agent_pool_name" {
-  description = "Azure DevOps agent pool name for self-hosted ACI agents"
+  description = "Azure DevOps agent pool name for self-hosted Container App Job agents"
   type        = string
   default     = "aci-cicd-pool"
 }
 
-variable "aci_agent_count" {
-  description = "Number of ACI-based ADO agent instances"
+# --- Container App Job Settings ---
+
+variable "container_app_max_execution_count" {
+  description = "Maximum number of concurrent Container App Job executions (KEDA scaling upper bound)"
+  type        = number
+  default     = 10
+}
+
+variable "container_app_min_execution_count" {
+  description = "Minimum number of Container App Job executions (0 = scale to zero when idle)"
+  type        = number
+  default     = 0
+}
+
+variable "container_app_polling_interval" {
+  description = "KEDA polling interval in seconds (how often to check ADO queue for pending jobs)"
+  type        = number
+  default     = 30
+}
+
+variable "container_app_cpu" {
+  description = "CPU cores per Container App Job execution (e.g. 2)"
   type        = number
   default     = 2
+}
 
-  validation {
-    condition     = var.aci_agent_count > 0
-    error_message = "aci_agent_count must be greater than 0."
-  }
+variable "container_app_memory" {
+  description = "Memory in GB per Container App Job execution (e.g. 4)"
+  type        = string
+  default     = "4Gi"
 }
 
 # --- Networking ---
 
-variable "aci_agents_subnet_cidr" {
-  description = "CIDR for ACI agents subnet"
+variable "container_app_subnet_cidr" {
+  description = "CIDR for Container App Environment subnet (min /27, delegation: Microsoft.App/environments)"
   type        = string
   default     = "10.2.0.0/27"
 }
@@ -76,6 +97,12 @@ variable "aci_agents_acr_subnet_cidr" {
   description = "CIDR for ACR private endpoint subnet"
   type        = string
   default     = "10.2.0.32/29"
+}
+
+variable "private_endpoints_subnet_cidr" {
+  description = "CIDR for state SA and platform KV private endpoints"
+  type        = string
+  default     = "10.2.0.48/28"
 }
 
 # --- Platform Key Vault ---
@@ -88,6 +115,56 @@ variable "platform_key_vault_id" {
     condition     = can(regex("^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.KeyVault/vaults/[^/]+$", var.platform_key_vault_id))
     error_message = "platform_key_vault_id must be a valid Azure Key Vault resource ID."
   }
+}
+
+# --- Terraform State Storage Account ---
+
+variable "state_storage_account_id" {
+  description = "Resource ID of the Terraform state storage account for private endpoint"
+  type        = string
+  default     = ""
+}
+
+# --- Hub Integration (REQUIRED — hub must be deployed first) ---
+
+variable "hub_vnet_id" {
+  description = "Hub VNet resource ID for peering"
+  type        = string
+
+  validation {
+    condition     = can(regex("^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.Network/virtualNetworks/[^/]+$", var.hub_vnet_id))
+    error_message = "hub_vnet_id must be a valid Azure VNet resource ID."
+  }
+}
+
+variable "hub_dns_resolver_ip" {
+  description = "Hub DNS resolver inbound IP for VNet custom DNS"
+  type        = string
+
+  validation {
+    condition     = can(regex("^\\d+\\.\\d+\\.\\d+\\.\\d+$", var.hub_dns_resolver_ip))
+    error_message = "hub_dns_resolver_ip must be a valid IPv4 address."
+  }
+}
+
+variable "hub_acr_dns_zone_id" {
+  description = "Hub privatelink.azurecr.io DNS zone ID for ACR private endpoint"
+  type        = string
+}
+
+variable "hub_blob_dns_zone_id" {
+  description = "Hub privatelink.blob.core.windows.net DNS zone ID for state SA private endpoint"
+  type        = string
+}
+
+variable "hub_vault_dns_zone_id" {
+  description = "Hub privatelink.vaultcore.azure.net DNS zone ID for platform KV private endpoint"
+  type        = string
+}
+
+variable "hub_log_analytics_workspace_id" {
+  description = "Hub Log Analytics workspace resource ID for centralized monitoring"
+  type        = string
 }
 
 # --- Tags ---

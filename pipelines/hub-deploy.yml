@@ -9,8 +9,8 @@
 #      - Go to Pipelines → hub-deploy → Edit → Variables → New variable
 #      - Name: PLATFORM_KV_ID, Value: /subscriptions/.../resourceGroups/.../providers/Microsoft.KeyVault/vaults/...
 #
-# This pipeline always runs on Microsoft-hosted agents.
-# CI/CD agents are deployed separately via cicd-deploy.yml.
+# Hub pipeline always runs on Microsoft-hosted agents.
+# Hub state SA has public access — no private networking needed.
 
 trigger:
   branches:

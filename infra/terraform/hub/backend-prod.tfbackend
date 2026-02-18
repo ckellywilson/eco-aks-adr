@@ -1,5 +1,5 @@
-resource_group_name  = "rg-terraform-state-dev"
-storage_account_name = "sttfstatedevd3120d7a"
+resource_group_name  = "rg-tfstate-hub-eus2-prod"
+storage_account_name = "sttfstatehubeus2d2c496b3"
 container_name       = "tfstate-hub"
 key                  = "terraform.tfstate"
 use_azuread_auth     = true
