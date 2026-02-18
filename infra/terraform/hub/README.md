@@ -94,15 +94,15 @@ Terraform state is stored in Azure Storage with separate storage accounts per se
 
 | Storage Account | Resource Group | Container | Pipeline Pool | Access |
 |---|---|---|---|---|
-| `sttfstatehubeus2<suffix>` | `rg-tfstate-hub-eus2-prod` | `tfstate-hub` | MS-hosted | Public |
-| `sttfstateeus2<suffix>` | `rg-cicd-eus2-prod` | `tfstate-cicd`, `tfstate-spoke` | Self-hosted | Private (after lockdown) |
+| `sttfstatecicdeus2<suffix>` | `rg-cicd-eus2-prod` | `tfstate-cicd` | MS-hosted (bootstrap), self-hosted (Day 2+) | Public at bootstrap, private after lockdown |
+| `sttfstateeus2<suffix>` | `rg-tfstate-eus2-prod` | `tfstate-hub`, `tfstate-spoke` | Self-hosted | Always private (PE from CI/CD VNet) |
 
 ### Setting State Container
 
 When initializing, the appropriate backend config selects the correct SA and container:
 
 ```bash
-# Hub state — public SA, MS-hosted agents
+# Hub state — Hub+Spoke SA, self-hosted agents
 cd infra/terraform/hub
 terraform init -backend-config="backend-prod.tfbackend"
 ```

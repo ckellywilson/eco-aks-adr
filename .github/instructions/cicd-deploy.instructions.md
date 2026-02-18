@@ -49,21 +49,47 @@ The CI/CD landing zone is the **platform automation hub** — all pipelines requ
 2. **Kubernetes workload deployment** — Agents run `helm upgrade` and `kubectl apply` against the private AKS API server, which is only reachable from peered VNets
 3. **Future pipeline workloads** — Any new pipeline requiring private network access (e.g., database migrations, secret rotation, compliance scans) can target the `aci-cicd-pool` without additional infrastructure
 
-### Hub Dependency (REQUIRED)
+### Hub Dependency (Optional — Bootstrap-First Pattern)
 
-The hub MUST be deployed before the CI/CD landing zone. The hub provides centralized private DNS zones (per [Azure CAF guidance](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/azure-best-practices/private-link-and-dns-integration-at-scale)), DNS resolver, and the VNet for peering.
+The hub dependency is **optional**. The CI/CD landing zone supports a **bootstrap-first** deployment pattern where CI/CD deploys before the hub exists. When hub variables are empty (no VNet ID, no DNS resolver IP, no DNS zone IDs), the CI/CD landing zone deploys without peering, custom DNS, or hub DNS zones. It creates its own private DNS zones for services it needs (blob storage, Key Vault, and optionally ACR).
 
-**Deployment order**: Hub first → CI/CD second → Spoke third.
+**Bootstrap deployment order**:
+1. **CI/CD first** (bootstrap) — deploys with no hub integration, creates own DNS zones
+2. **Hub** — deploys hub infrastructure
+3. **CI/CD Day 2** — re-apply with hub variables populated to add peering, custom DNS, hub DNS zone integration
+4. **Spoke** — deploys into hub-managed RG/VNet using self-hosted agents
 
-| Hub Output | CI/CD Usage |
-|---|---|
-| `hub_vnet_id` | Remote VNet ID for bidirectional peering |
-| `hub_vnet_name` | Hub VNet name for hub-to-CI/CD peering resource |
-| `dns_resolver_inbound_ip` | CI/CD VNet custom DNS server |
-| `private_dns_zone_ids` | DNS zones for ACR, blob, vault private endpoints |
-| `log_analytics_workspace_id` | Container App Job logging and diagnostics |
+**Full integration mode**: When the hub is deployed first, the CI/CD landing zone reads hub outputs via `terraform_remote_state` or variables to get:
 
-All hub variables are **required** — there are no bootstrap defaults. CI/CD does NOT create its own private DNS zones; all zones are centralized in the hub per CAF guidance.
+| Hub Output | CI/CD Usage | Required? |
+|---|---|---|
+| `hub_vnet_id` | Remote VNet ID for bidirectional peering | Optional |
+| `hub_vnet_name` | Hub VNet name for hub-to-CI/CD peering resource | Optional |
+| `dns_resolver_inbound_ip` | CI/CD VNet custom DNS server | Optional |
+| `private_dns_zone_ids` | ACR private endpoint DNS (`privatelink.azurecr.io`) | Optional |
+| `log_analytics_workspace_id` | Container App Job logging and diagnostics | Optional |
+
+When hub values are not provided, CI/CD uses Azure default DNS and creates its own `privatelink.azurecr.io` zone.
+
+```hcl
+data "terraform_remote_state" "hub" {
+  backend = "azurerm"
+  config = {
+    resource_group_name  = "rg-terraform-state-dev"
+    storage_account_name = "<backend-storage-account>"
+    container_name       = "tfstate-hub"
+    key                  = "terraform.tfstate"
+    use_azuread_auth     = true
+  }
+}
+
+locals {
+  hub_outputs   = data.terraform_remote_state.hub.outputs
+  hub_rg_name   = local.hub_outputs.hub_resource_group_name
+  hub_vnet_name = local.hub_outputs.hub_vnet_name
+  # Hub integration is conditional — empty values skip peering/DNS
+}
+```
 
 ### Component Inventory
 
@@ -72,15 +98,16 @@ Use Azure Verified Modules (AVM) where available. Always check the [AVM Module I
 | Component | Purpose | Terraform Module / Resource |
 |---|---|---|
 | CI/CD RG + VNet | Infrastructure container (self-created) | `azurerm_resource_group` + `azurerm_virtual_network` |
-| VNet Peering | Bidirectional hub ↔ CI/CD | `azurerm_virtual_network_peering` |
+| VNet Peering | Bidirectional hub ↔ CI/CD (conditional, requires hub) | `azurerm_virtual_network_peering` |
 | Subnets | Container App agents, ACR PE, State SA + KV PE | `azurerm_subnet` |
 | Container App Job ADO Agents | Self-hosted pipeline agents with KEDA auto-scaling (0 to N) | AVM `avm-ptn-cicd-agents-and-runners` |
 | CI/CD Agent UAMI | Agent authentication with ADO and platform KV | `azurerm_user_assigned_identity` |
 | RBAC Assignment | Key Vault Secrets User on platform KV | `azurerm_role_assignment` |
 | NAT Gateway | Container App outbound connectivity (self-managed) | `azurerm_nat_gateway` + `azurerm_nat_gateway_public_ip_association` + `azurerm_subnet_nat_gateway_association` |
-| ACR (module-managed) | Agent container image registry with private endpoint | Created by AVM module (PE wired to hub DNS zone) |
-| State Storage Account PE | Private endpoint to script-created state SA | `azurerm_private_endpoint` (SA created by `setup-ado-pipeline.sh`) |
+| ACR (module-managed) | Agent container image registry with private endpoint | Created by AVM module (PE wired to hub or CI/CD-owned DNS zone) |
+| State Storage Account | Terraform state backend co-located in CI/CD RG | `azurerm_storage_account` with private endpoint |
 | Platform KV Private Endpoint | Private access to platform Key Vault from CI/CD VNet | `azurerm_private_endpoint` |
+| CI/CD-Owned DNS Zones | `privatelink.blob.core.windows.net`, `privatelink.vaultcore.azure.net` (ACR zone conditional) | `azurerm_private_dns_zone` + VNet links |
 
 ---
 
@@ -90,7 +117,12 @@ Use Azure Verified Modules (AVM) where available. Always check the [AVM Module I
 
 Unlike the spoke (which is hub-managed), the CI/CD landing zone creates its **own** resource group, VNet, and bidirectional peering. This keeps CI/CD infrastructure self-contained — the hub does not need a `spoke_vnets` entry for CI/CD.
 
-The CI/CD VNet custom DNS is always set to the hub DNS resolver inbound IP. All private DNS zones are centralized in the hub per [Azure CAF guidance](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/azure-best-practices/private-link-and-dns-integration-at-scale). The CI/CD landing zone does NOT create its own private DNS zones — it references hub-owned zones for all private endpoints.
+**Bootstrap-first pattern**: The CI/CD landing zone can deploy **before** the hub exists. When hub variables are empty, the VNet uses Azure default DNS and peering is skipped. When hub integration is added later (Day 2), custom DNS is set to the hub DNS resolver inbound IP and bidirectional peering is created.
+
+The CI/CD landing zone also creates its **own private DNS zones** for services it needs:
+- `privatelink.blob.core.windows.net` — for the co-located state storage account private endpoint
+- `privatelink.vaultcore.azure.net` — for the platform Key Vault private endpoint
+- `privatelink.azurecr.io` — conditionally created when hub's ACR DNS zone is not available (bootstrap mode); uses hub's zone when hub is integrated
 
 ```hcl
 resource "azurerm_resource_group" "cicd" {
@@ -104,11 +136,12 @@ resource "azurerm_virtual_network" "cicd" {
   resource_group_name = azurerm_resource_group.cicd.name
   location            = azurerm_resource_group.cicd.location
   address_space       = var.cicd_vnet_address_space
-  dns_servers         = [var.hub_dns_resolver_ip]
+  dns_servers         = var.hub_dns_resolver_inbound_ip != "" ? [var.hub_dns_resolver_inbound_ip] : []
   tags                = local.common_tags
 }
 
 resource "azurerm_virtual_network_peering" "cicd_to_hub" {
+  count                     = local.hub_integrated ? 1 : 0
   name                      = "peer-cicd-to-hub"
   resource_group_name       = azurerm_resource_group.cicd.name
   virtual_network_name      = azurerm_virtual_network.cicd.name
@@ -117,6 +150,7 @@ resource "azurerm_virtual_network_peering" "cicd_to_hub" {
 }
 
 resource "azurerm_virtual_network_peering" "hub_to_cicd" {
+  count                     = local.hub_integrated ? 1 : 0
   name                      = "peer-hub-to-cicd"
   resource_group_name       = local.hub_rg_name
   virtual_network_name      = local.hub_vnet_name
@@ -226,13 +260,15 @@ The operator does NOT need to manage container images manually. Setting `use_def
 
 ### ACR Private Endpoint
 
-The module-managed ACR uses a private endpoint wired to the hub's `privatelink.azurecr.io` DNS zone:
+The module-managed ACR uses a private endpoint wired to either the hub's or CI/CD-owned `privatelink.azurecr.io` DNS zone:
 
 ```hcl
-container_registry_private_dns_zone_creation_enabled = false
-container_registry_dns_zone_id                       = var.hub_acr_dns_zone_id
+container_registry_private_dns_zone_creation_enabled = var.hub_acr_dns_zone_id == "" ? true : false
+container_registry_dns_zone_id                       = var.hub_acr_dns_zone_id != "" ? var.hub_acr_dns_zone_id : null
 container_registry_private_endpoint_subnet_id        = azurerm_subnet.aci_agents_acr.id
 ```
+
+**Key**: When the hub is available and provides a `privatelink.azurecr.io` zone, the module uses it (DNS zone creation disabled). In bootstrap mode (no hub), the module creates its own ACR DNS zone linked to the CI/CD VNet.
 
 ### ADO Configuration
 
@@ -303,9 +339,13 @@ The `platform_key_vault_id` is passed as a pipeline variable (`PLATFORM_KV_ID`),
 
 ## DNS Resolution
 
-The CI/CD VNet custom DNS points to the hub DNS resolver inbound endpoint. All private endpoint resolution works through the hub DNS chain — the CI/CD landing zone does NOT own any private DNS zones.
+The CI/CD VNet supports two DNS resolution modes depending on whether the hub is deployed:
 
-### Resolution Flow
+**With hub integration**: Custom DNS on the CI/CD VNet points to the hub DNS resolver inbound endpoint. All private endpoint resolution works through the hub DNS chain (see [Self-Contained Resource Pattern](#self-contained-resource-pattern)).
+
+**Bootstrap mode (no hub)**: The CI/CD VNet uses Azure default DNS. CI/CD-owned private DNS zones (`privatelink.blob.core.windows.net`, `privatelink.vaultcore.azure.net`, and optionally `privatelink.azurecr.io`) are linked directly to the CI/CD VNet for resolution.
+
+### Resolution Flow (Hub Integrated)
 
 ```
 Container App Job (CI/CD Agent)
@@ -316,11 +356,20 @@ Container App Job (CI/CD Agent)
           → A record → Private IP of target resource
 ```
 
+### Resolution Flow (Bootstrap — No Hub)
+
+```
+Container App Job (CI/CD Agent)
+  → Azure Default DNS (168.63.129.16)
+    → CI/CD-owned Private DNS Zone (linked to CI/CD VNet)
+      → A record → Private IP of target resource
+```
+
 This enables Container App Job agents to resolve:
 - **ACR private endpoint** (`privatelink.azurecr.io`) — for pulling agent container images
 - **State storage account** (`privatelink.blob.core.windows.net`) — for Terraform state access
 - **Platform Key Vault** (`privatelink.vaultcore.azure.net`) — for reading platform secrets
-- **AKS API server** (`privatelink.{region}.azmk8s.io`) — when spoke pipelines run kubectl/helm commands
+- **AKS API server** (`privatelink.{region}.azmk8s.io`) — when spoke pipelines run kubectl/helm commands (requires hub integration)
 
 Reference: [Azure DNS Private Resolver architecture](https://learn.microsoft.com/en-us/azure/dns/private-resolver-architecture)
 
@@ -409,59 +458,66 @@ Consult [Azure naming conventions](https://learn.microsoft.com/en-us/azure/cloud
 
 ### Three-Pipeline Architecture
 
-The hub deploys first on MS-hosted agents (public state SA), then CI/CD deploys to create self-hosted agents, and finally the spoke deploys on self-hosted agents (private state SA + private AKS API).
+The CI/CD landing zone supports a **bootstrap-first** pattern. It can deploy before the hub exists, then integrate with the hub later. All three pipelines (hub, cicd, spoke) run on the self-hosted pool (`pool: name: 'aci-cicd-pool'`) once it exists. The pool name is kept for backward compatibility.
 
 ```
-Phase 1: Hub deployment (hub pipeline — MS-hosted agents)
-  └─→ Hub RG, VNet, Firewall, Bastion, DNS Resolver, Log Analytics
-  └─→ ALL private DNS Zones (linked to hub VNet)
-  └─→ Spoke RG + VNet (hub_managed, custom DNS → hub resolver)
-  └─→ Bidirectional VNet Peering (hub ↔ spoke)
-
-Phase 2: CI/CD deployment (cicd pipeline — MS-hosted agents, first run only)
-  └─→ Create CI/CD RG + VNet (custom DNS → hub resolver)
-  └─→ Bidirectional VNet Peering (CI/CD ↔ hub)
+Phase 1: CI/CD deployment (cicd pipeline — bootstrap, runs on MS-hosted agents initially)
+  └─→ Create CI/CD RG + VNet (no hub DNS, no peering in bootstrap mode)
   └─→ Subnets (container-app, aci-agents-acr, private-endpoints)
   └─→ Self-managed NAT Gateway
+  └─→ CI/CD-owned DNS zones (blob, vault, conditional ACR)
   └─→ UAMI identity
   └─→ RBAC: Key Vault Secrets User on platform KV
-  └─→ State SA PE + Platform KV PE (using hub DNS zones)
+  └─→ State SA + private endpoint
+  └─→ Platform KV private endpoint
   └─→ AVM CI/CD Agents module:
       └─→ ACR + private endpoint + ACR Tasks (image build)
       └─→ Container App Environment + Container App Jobs (KEDA-scaled agents)
       └─→ Placeholder job auto-registers with ADO pool
 
-Phase 3: Manual — Register UAMI in ADO organization
+Phase 2: Manual — Register UAMI in ADO organization
   └─→ Add UAMI to Project Collection Service Accounts group
   └─→ Verify placeholder agent appears in ADO pool (shows "Offline" when idle — expected)
 
-Phase 4: Lock down CI/CD+spoke state SA
-  └─→ Disable public access on state SA
-  └─→ All subsequent CI/CD and spoke runs use self-hosted agents through private endpoint
+Phase 3: Hub deployment (hub pipeline — runs on self-hosted agents)
+  └─→ Hub RG, VNet, Firewall, Bastion, DNS Resolver, Log Analytics
+  └─→ Private DNS Zones (linked to hub VNet)
+  └─→ Spoke RG + VNet (hub_managed, custom DNS → hub resolver)
+  └─→ Bidirectional VNet Peering (hub ↔ spoke)
 
-Phase 5: Spoke deployment (spoke pipeline — self-hosted agents)
+Phase 4: CI/CD Day 2 (cicd pipeline — re-apply with hub variables)
+  └─→ Adds VNet peering (CI/CD ↔ hub), custom DNS (hub resolver IP)
+  └─→ Switches to hub DNS zones (ACR, blob, vault) — CI/CD zones removed
+  └─→ Creates PE for Hub+Spoke SA (so self-hosted agents can reach hub/spoke state)
+
+Phase 5: Spoke deployment (spoke pipeline — runs on self-hosted agents)
   └─→ AKS cluster, ACR, Key Vault, etc. (see spoke spec)
 ```
 
-### Deployment Sequence
+### Bootstrap Sequence
+
+The bootstrap-first pattern eliminates the chicken-and-egg problem. CI/CD deploys first with no hub dependency, then the hub deploys using the now-available self-hosted agents.
 
 | Phase | Pipeline | Runs On | Rationale |
 |---|---|---|---|
-| 1 — Hub | `hub-deploy` | **MS-hosted agents** | Hub state SA is public; no private access needed |
-| 2 — CI/CD (first run) | `cicd-deploy` | **MS-hosted agents** | Self-hosted agents are being created; state SA still public |
-| 3 — ADO Registration | Manual | — | Register UAMI in `Project Collection Service Accounts` |
-| 4 — Lock down state SA | Manual | — | Disable public access on CI/CD+spoke state SA |
-| 5 — CI/CD (subsequent) | `cicd-deploy` | **Self-hosted agents** (`aci-cicd-pool`) | State SA now private |
-| 6 — Spoke | `spoke-deploy` | **Self-hosted agents** (`aci-cicd-pool`) | Private state SA + private AKS API server |
+| 1 — CI/CD (bootstrap) | `cicd-deploy` | **MS-hosted agents** (first run only) | Self-hosted agents are being created |
+| 2 — ADO Registration | Manual | — | Register UAMI in `Project Collection Service Accounts` |
+| 3 — Hub | `hub-deploy` | **Self-hosted agents** (`aci-cicd-pool`) | Self-hosted agents now available |
+| 4 — CI/CD Day 2 | `cicd-deploy` | **Self-hosted agents** (`aci-cicd-pool`) | Add hub integration (peering, DNS) |
+| 5 — Spoke | `spoke-deploy` | **Self-hosted agents** (`aci-cicd-pool`) | Agents can reach private AKS API server |
 
-**Why the spoke uses self-hosted agents**: The spoke AKS cluster is private — its API server is only accessible from peered VNets. The CI/CD+spoke state SA is private — only accessible via private endpoint. Microsoft-hosted agents cannot reach private endpoints. The CI/CD VNet is peered with the hub, which is peered with the spoke, enabling Container App Job agents to reach both the AKS API server and the state SA.
+**Why the spoke uses self-hosted agents**: The spoke AKS cluster is private — its API server is only accessible from peered VNets. Microsoft-hosted agents cannot reach private endpoints. The CI/CD VNet is peered with the hub, which is peered with the spoke, enabling Container App Job agents to reach the AKS API server through the peered network.
 
 ### Dependency Graph
 
 ```
-Hub (MS-hosted) ──→ CI/CD (MS-hosted, first run) ──→ [Manual: Register UAMI + Lock down state SA]
-                      ↓
-                    Spoke (self-hosted)
+CI/CD (MS-hosted, bootstrap) ──→ [Manual: Register UAMI in ADO]
+  ↓
+Hub (self-hosted)
+  ↓
+CI/CD Day 2 (self-hosted, add hub integration)
+  ↓
+Spoke (self-hosted)
 ```
 
 ---
@@ -552,21 +608,19 @@ Container App Jobs use KEDA to auto-scale based on the ADO pipeline queue:
 | `agent_uami_id` | CI/CD agent UAMI resource ID | ADO service connection setup |
 | `agent_uami_client_id` | CI/CD agent UAMI client ID | ADO UAMI registration (manual step) |
 | `agent_uami_principal_id` | CI/CD agent UAMI principal ID | RBAC assignments, troubleshooting |
-| `state_sa_pe_ip` | State storage account private endpoint IP | Troubleshooting DNS resolution |
+| `state_sa_pe_ip` | CI/CD state storage account private endpoint IP | Troubleshooting DNS resolution |
+| `hub_spoke_state_sa_pe_ip` | Hub+Spoke state SA private endpoint IP | Troubleshooting DNS resolution |
 | `platform_kv_pe_ip` | Platform Key Vault private endpoint IP | Troubleshooting DNS resolution |
+| `hub_integrated` | Whether hub integration is active | Deployment verification |
 
 ### Outputs Consumed by Spoke Pipeline
 
 The spoke pipeline YAML references the agent pool name to run on self-hosted agents:
 
 ```yaml
-# CI/CD and spoke pipelines — self-hosted Container App Job agents
+# All pipelines (hub, cicd, spoke) — runs on self-hosted Container App Job agents
 pool:
-  name: 'aci-cicd-pool'
-
-# Hub pipeline — MS-hosted agents (public state SA, no private access needed)
-pool:
-  vmImage: 'ubuntu-latest'
+  name: 'aci-cicd-pool'  # Name kept for backward compatibility
 ```
 
 ---
@@ -579,8 +633,8 @@ Before deploying CI/CD infrastructure:
 2. **Verify backend storage access** — enable public network access if needed
 3. **Verify ADO organization URL** — ensure `ado_organization_url` is correct in tfvars
 4. **Verify platform Key Vault** — `platform_key_vault_id` must be a valid KV resource ID
-5. **Verify hub is deployed** — hub provides DNS zones, resolver, and VNet for peering
-6. **Verify hub DNS zones exist** — `hub_blob_dns_zone_id`, `hub_vault_dns_zone_id`, `hub_acr_dns_zone_id` must be valid zone IDs
+5. **(Optional) Verify hub is deployed** — only needed for hub integration (peering, custom DNS, hub DNS zones). Not required for bootstrap mode.
+6. **(Optional) Verify ACR DNS zone exists in hub** — `private_dns_zone_ids` output must include `privatelink.azurecr.io`. If not available, CI/CD creates its own ACR DNS zone.
 
 ---
 

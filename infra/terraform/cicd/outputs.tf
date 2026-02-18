@@ -29,11 +29,21 @@ output "agent_uami_principal_id" {
 }
 
 output "state_sa_pe_ip" {
-  description = "State SA private endpoint IP address"
+  description = "CI/CD state SA private endpoint IP address"
   value       = local.state_sa_enabled ? azurerm_private_endpoint.state_sa[0].private_service_connection[0].private_ip_address : null
+}
+
+output "hub_spoke_state_sa_pe_ip" {
+  description = "Hub+Spoke state SA private endpoint IP address"
+  value       = local.hub_spoke_state_sa_enabled ? azurerm_private_endpoint.hub_spoke_state_sa[0].private_service_connection[0].private_ip_address : null
 }
 
 output "platform_kv_pe_ip" {
   description = "Platform KV private endpoint IP address"
   value       = var.platform_key_vault_id != "" ? azurerm_private_endpoint.platform_kv[0].private_service_connection[0].private_ip_address : null
+}
+
+output "hub_integrated" {
+  description = "Whether hub integration is active (peering, custom DNS, hub DNS zones)"
+  value       = local.hub_integrated
 }
