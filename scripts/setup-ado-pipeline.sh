@@ -714,15 +714,6 @@ create_platform_kv() {
     log "  Generated SSH key pair and stored in Key Vault"
   fi
 
-  # Store ADO PAT in Key Vault (for pipeline UAMI registration automation)
-  local existing_pat
-  existing_pat=$(az keyvault secret show --vault-name "$kv_name" -n "ado-pat" --query "value" -o tsv 2>/dev/null || true)
-  if [[ -n "$existing_pat" ]]; then
-    warn "ADO PAT already exists in Key Vault. Updating with current value."
-  fi
-  az keyvault secret set --vault-name "$kv_name" -n "ado-pat" --value "$AZURE_DEVOPS_PAT" -o none
-  log "  Stored ADO PAT in Key Vault as 'ado-pat'"
-
   log "  Platform KV ID: $PLATFORM_KV_ID"
 }
 
