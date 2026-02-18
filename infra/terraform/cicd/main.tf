@@ -8,8 +8,8 @@
 # Auth: UAMI (no PAT tokens), private networking, KEDA auto-scaling (0 to N).
 #
 # This module is SELF-CONTAINED — it creates its own RG, VNet, and peering.
-# Hub REQUIRED — provides DNS zones (centralized per CAF), resolver, and peering.
-# Deployment order: Hub first → CI/CD second → Spoke third.
+# Hub is OPTIONAL — bootstrap deploys without hub, Day 2 adds hub integration.
+# Deployment order: CI/CD first (bootstrap) → Hub → CI/CD Day 2 → Spoke.
 # =============================================================================
 
 # --- Resource Group ---
@@ -20,18 +20,20 @@ resource "azurerm_resource_group" "cicd" {
 }
 
 # --- VNet ---
-# Custom DNS points to hub DNS resolver for centralized private DNS resolution
+# Bootstrap: no custom DNS (Azure default resolves CI/CD-owned private DNS zones)
+# Day 2: custom DNS points to hub DNS resolver for centralized resolution
 resource "azurerm_virtual_network" "cicd" {
   name                = var.cicd_vnet_name
   resource_group_name = azurerm_resource_group.cicd.name
   location            = azurerm_resource_group.cicd.location
   address_space       = var.cicd_vnet_address_space
-  dns_servers         = [var.hub_dns_resolver_ip]
+  dns_servers         = var.hub_dns_resolver_ip != "" ? [var.hub_dns_resolver_ip] : []
   tags                = local.common_tags
 }
 
-# --- VNet Peering (bidirectional — hub is required) ---
+# --- VNet Peering (conditional — only when hub exists) ---
 resource "azurerm_virtual_network_peering" "cicd_to_hub" {
+  count                     = local.hub_integrated ? 1 : 0
   name                      = "peer-cicd-to-hub"
   resource_group_name       = azurerm_resource_group.cicd.name
   virtual_network_name      = azurerm_virtual_network.cicd.name
@@ -40,6 +42,7 @@ resource "azurerm_virtual_network_peering" "cicd_to_hub" {
 }
 
 resource "azurerm_virtual_network_peering" "hub_to_cicd" {
+  count                     = local.hub_integrated ? 1 : 0
   name                      = "peer-hub-to-cicd"
   resource_group_name       = local.hub_rg_name
   virtual_network_name      = local.hub_vnet_name
@@ -150,11 +153,64 @@ resource "azurerm_role_assignment" "cicd_agents_kv_reader" {
 }
 
 # =============================================================================
-# Private Endpoints — State SA + Platform KV
-# DNS zones are centralized in the hub per CAF guidance.
+# CI/CD-Owned Private DNS Zones (bootstrap mode — no hub)
+# =============================================================================
+# When hub DNS zones are not provided, CI/CD creates its own zones linked to
+# the CI/CD VNet. Azure default DNS (168.63.129.16) resolves zones linked to
+# the querying VNet natively — no DNS resolver needed.
+# Day 2: these zones are destroyed when hub zone IDs are populated in tfvars.
+
+resource "azurerm_private_dns_zone" "blob" {
+  count               = local.use_hub_blob_zone ? 0 : 1
+  name                = "privatelink.blob.core.windows.net"
+  resource_group_name = azurerm_resource_group.cicd.name
+  tags                = local.common_tags
+}
+
+resource "azurerm_private_dns_zone_virtual_network_link" "blob" {
+  count                 = local.use_hub_blob_zone ? 0 : 1
+  name                  = "link-blob-cicd"
+  resource_group_name   = azurerm_resource_group.cicd.name
+  private_dns_zone_name = azurerm_private_dns_zone.blob[0].name
+  virtual_network_id    = azurerm_virtual_network.cicd.id
+}
+
+resource "azurerm_private_dns_zone" "vault" {
+  count               = local.use_hub_vault_zone ? 0 : 1
+  name                = "privatelink.vaultcore.azure.net"
+  resource_group_name = azurerm_resource_group.cicd.name
+  tags                = local.common_tags
+}
+
+resource "azurerm_private_dns_zone_virtual_network_link" "vault" {
+  count                 = local.use_hub_vault_zone ? 0 : 1
+  name                  = "link-vault-cicd"
+  resource_group_name   = azurerm_resource_group.cicd.name
+  private_dns_zone_name = azurerm_private_dns_zone.vault[0].name
+  virtual_network_id    = azurerm_virtual_network.cicd.id
+}
+
+resource "azurerm_private_dns_zone" "acr" {
+  count               = local.use_hub_acr_zone ? 0 : 1
+  name                = "privatelink.azurecr.io"
+  resource_group_name = azurerm_resource_group.cicd.name
+  tags                = local.common_tags
+}
+
+resource "azurerm_private_dns_zone_virtual_network_link" "acr" {
+  count                 = local.use_hub_acr_zone ? 0 : 1
+  name                  = "link-acr-cicd"
+  resource_group_name   = azurerm_resource_group.cicd.name
+  private_dns_zone_name = azurerm_private_dns_zone.acr[0].name
+  virtual_network_id    = azurerm_virtual_network.cicd.id
+}
+
+# =============================================================================
+# Private Endpoints — CI/CD SA, Hub+Spoke SA, Platform KV
+# DNS zone IDs resolved via locals: hub zones when available, CI/CD-owned otherwise.
 # =============================================================================
 
-# State SA private endpoint
+# CI/CD State SA private endpoint
 resource "azurerm_private_endpoint" "state_sa" {
   count               = local.state_sa_enabled ? 1 : 0
   name                = "pe-tfstate-${var.environment}-${local.location_code}"
@@ -172,11 +228,33 @@ resource "azurerm_private_endpoint" "state_sa" {
 
   private_dns_zone_group {
     name                 = "default"
-    private_dns_zone_ids = [var.hub_blob_dns_zone_id]
+    private_dns_zone_ids = [local.blob_dns_zone_id]
   }
 }
 
-# Platform KV private endpoint (conditional on KV being configured)
+# Hub+Spoke State SA private endpoint (Day 2 — after hub exists, self-hosted agents access this)
+resource "azurerm_private_endpoint" "hub_spoke_state_sa" {
+  count               = local.hub_spoke_state_sa_enabled ? 1 : 0
+  name                = "pe-tfstate-hubspoke-${var.environment}-${local.location_code}"
+  resource_group_name = azurerm_resource_group.cicd.name
+  location            = var.location
+  subnet_id           = azurerm_subnet.private_endpoints.id
+  tags                = local.common_tags
+
+  private_service_connection {
+    name                           = "psc-tfstate-hubspoke-${var.environment}-${local.location_code}"
+    private_connection_resource_id = var.hub_spoke_state_storage_account_id
+    subresource_names              = ["blob"]
+    is_manual_connection           = false
+  }
+
+  private_dns_zone_group {
+    name                 = "default"
+    private_dns_zone_ids = [local.blob_dns_zone_id]
+  }
+}
+
+# Platform KV private endpoint
 resource "azurerm_private_endpoint" "platform_kv" {
   count               = var.platform_key_vault_id != "" ? 1 : 0
   name                = "pe-kvplatform-${var.environment}-${local.location_code}"
@@ -194,7 +272,7 @@ resource "azurerm_private_endpoint" "platform_kv" {
 
   private_dns_zone_group {
     name                 = "default"
-    private_dns_zone_ids = [var.hub_vault_dns_zone_id]
+    private_dns_zone_ids = [local.vault_dns_zone_id]
   }
 }
 
@@ -231,9 +309,9 @@ module "cicd_agents" {
   # ACR name must be globally unique (alphanumeric only)
   container_registry_name = "acrcicd${var.environment}${local.location_code}${random_string.acr_suffix.result}"
 
-  # ACR private endpoint — uses hub's centralized DNS zone
+  # ACR private endpoint — uses hub zone when available, CI/CD-owned zone at bootstrap
   container_registry_private_dns_zone_creation_enabled = false
-  container_registry_dns_zone_id                       = var.hub_acr_dns_zone_id
+  container_registry_dns_zone_id                       = local.acr_dns_zone_id
   container_registry_private_endpoint_subnet_id        = azurerm_subnet.aci_agents_acr.id
 
   # ADO configuration
@@ -249,9 +327,9 @@ module "cicd_agents" {
   user_assigned_managed_identity_client_id        = azurerm_user_assigned_identity.cicd_agents.client_id
   user_assigned_managed_identity_principal_id     = azurerm_user_assigned_identity.cicd_agents.principal_id
 
-  # Log Analytics — use hub workspace
-  log_analytics_workspace_creation_enabled = false
-  log_analytics_workspace_id               = var.hub_log_analytics_workspace_id
+  # Log Analytics — use hub workspace when available, let module create otherwise
+  log_analytics_workspace_creation_enabled = var.hub_log_analytics_workspace_id == ""
+  log_analytics_workspace_id               = var.hub_log_analytics_workspace_id != "" ? var.hub_log_analytics_workspace_id : null
 
   # NAT Gateway — self-managed (created above, passed to module)
   nat_gateway_creation_enabled = false

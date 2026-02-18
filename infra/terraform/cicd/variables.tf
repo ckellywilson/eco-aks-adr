@@ -108,63 +108,91 @@ variable "private_endpoints_subnet_cidr" {
 # --- Platform Key Vault ---
 
 variable "platform_key_vault_id" {
-  description = "Resource ID of the platform Key Vault containing SSH keys and platform secrets"
+  description = "Resource ID of the platform Key Vault containing SSH keys and platform secrets. Empty at bootstrap if KV doesn't exist yet."
   type        = string
+  default     = ""
 
   validation {
-    condition     = can(regex("^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.KeyVault/vaults/[^/]+$", var.platform_key_vault_id))
-    error_message = "platform_key_vault_id must be a valid Azure Key Vault resource ID."
+    condition     = var.platform_key_vault_id == "" || can(regex("^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.KeyVault/vaults/[^/]+$", var.platform_key_vault_id))
+    error_message = "platform_key_vault_id must be empty or a valid Azure Key Vault resource ID."
   }
 }
 
-# --- Terraform State Storage Account ---
+# --- Terraform State Storage Accounts ---
 
 variable "state_storage_account_id" {
-  description = "Resource ID of the Terraform state storage account for private endpoint"
+  description = "Resource ID of the CI/CD Terraform state storage account for private endpoint"
   type        = string
   default     = ""
 }
 
-# --- Hub Integration (REQUIRED — hub must be deployed first) ---
+variable "hub_spoke_state_storage_account_id" {
+  description = "Resource ID of the Hub+Spoke state storage account for private endpoint. Provide when this SA exists and you want CI/CD to create a PE (can be set at bootstrap or Day 2)."
+  type        = string
+  default     = ""
+}
+
+# --- Hub Integration (optional — empty for bootstrap, populated Day 2) ---
 
 variable "hub_vnet_id" {
-  description = "Hub VNet resource ID for peering"
+  description = "Hub VNet resource ID for peering. Empty = no peering (bootstrap mode)."
   type        = string
+  default     = ""
 
   validation {
-    condition     = can(regex("^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.Network/virtualNetworks/[^/]+$", var.hub_vnet_id))
-    error_message = "hub_vnet_id must be a valid Azure VNet resource ID."
+    condition     = var.hub_vnet_id == "" || can(regex("^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.Network/virtualNetworks/[^/]+$", var.hub_vnet_id))
+    error_message = "hub_vnet_id must be empty or a valid Azure VNet resource ID."
   }
 }
 
 variable "hub_dns_resolver_ip" {
-  description = "Hub DNS resolver inbound IP for VNet custom DNS"
+  description = "Hub DNS resolver inbound IP for VNet custom DNS. Empty = Azure default DNS (bootstrap mode)."
   type        = string
+  default     = ""
 
   validation {
-    condition     = can(regex("^\\d+\\.\\d+\\.\\d+\\.\\d+$", var.hub_dns_resolver_ip))
-    error_message = "hub_dns_resolver_ip must be a valid IPv4 address."
+    condition     = var.hub_dns_resolver_ip == "" || (can(regex("^\\d+\\.\\d+\\.\\d+\\.\\d+$", var.hub_dns_resolver_ip)) && var.hub_vnet_id != "")
+    error_message = "hub_dns_resolver_ip must be empty or a valid IPv4 address, and when set hub_vnet_id must also be provided."
   }
 }
 
 variable "hub_acr_dns_zone_id" {
-  description = "Hub privatelink.azurecr.io DNS zone ID for ACR private endpoint"
+  description = "Hub privatelink.azurecr.io DNS zone ID. Empty = CI/CD creates its own zone (bootstrap mode). Requires hub_dns_resolver_ip when set."
   type        = string
+  default     = ""
+
+  validation {
+    condition     = var.hub_acr_dns_zone_id == "" || var.hub_dns_resolver_ip != ""
+    error_message = "hub_acr_dns_zone_id requires hub_dns_resolver_ip (and hub_vnet_id) to be set — hub zones are only resolvable via the hub DNS resolver."
+  }
 }
 
 variable "hub_blob_dns_zone_id" {
-  description = "Hub privatelink.blob.core.windows.net DNS zone ID for state SA private endpoint"
+  description = "Hub privatelink.blob.core.windows.net DNS zone ID. Empty = CI/CD creates its own zone (bootstrap mode). Requires hub_dns_resolver_ip when set."
   type        = string
+  default     = ""
+
+  validation {
+    condition     = var.hub_blob_dns_zone_id == "" || var.hub_dns_resolver_ip != ""
+    error_message = "hub_blob_dns_zone_id requires hub_dns_resolver_ip (and hub_vnet_id) to be set — hub zones are only resolvable via the hub DNS resolver."
+  }
 }
 
 variable "hub_vault_dns_zone_id" {
-  description = "Hub privatelink.vaultcore.azure.net DNS zone ID for platform KV private endpoint"
+  description = "Hub privatelink.vaultcore.azure.net DNS zone ID. Empty = CI/CD creates its own zone (bootstrap mode). Requires hub_dns_resolver_ip when set."
   type        = string
+  default     = ""
+
+  validation {
+    condition     = var.hub_vault_dns_zone_id == "" || var.hub_dns_resolver_ip != ""
+    error_message = "hub_vault_dns_zone_id requires hub_dns_resolver_ip (and hub_vnet_id) to be set — hub zones are only resolvable via the hub DNS resolver."
+  }
 }
 
 variable "hub_log_analytics_workspace_id" {
-  description = "Hub Log Analytics workspace resource ID for centralized monitoring"
+  description = "Hub Log Analytics workspace resource ID. Empty = module creates its own (bootstrap mode)."
   type        = string
+  default     = ""
 }
 
 # --- Tags ---
