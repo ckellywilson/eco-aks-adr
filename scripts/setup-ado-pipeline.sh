@@ -129,7 +129,7 @@ preflight() {
   elif echo "$REPO_URL" | grep -qE 'github\.com'; then
     REPO_TYPE="GitHub"
     # Extract owner/repo from GitHub URL
-    REPO_NAME=$(echo "$REPO_URL" | sed -E 's|.*github\.com[:/](.+?)(\.git)?$|\1|')
+    REPO_NAME=$(echo "$REPO_URL" | sed -E 's|.*github\.com[:/](.+)$|\1|' | sed 's/\.git$//')
     log "  Detected GitHub repository: $REPO_NAME"
   else
     fail "Cannot determine repository type from URL: $REPO_URL\nExpected GitHub (github.com) or ADO Git (dev.azure.com)"
