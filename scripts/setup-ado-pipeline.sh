@@ -744,7 +744,7 @@ main() {
   log "  App Reg:       $APP_ID"
   log "  Repo Type:     $REPO_TYPE"
   log "  CI/CD state SA:     $STATE_SA_NAME (in $STATE_SA_RG) — public at bootstrap, lock down after agents"
-  log "  Hub+Spoke state SA: $HUB_STATE_SA_NAME (in $HUB_STATE_SA_RG) — always private"
+  log "  Hub+Spoke state SA: $HUB_STATE_SA_NAME (in $HUB_STATE_SA_RG) — public at bootstrap, lock down after PE exists"
   log "  Platform KV:   $PLATFORM_KV_ID"
   log ""
   log "  PLATFORM_KV_ID has been set as a pipeline variable."
