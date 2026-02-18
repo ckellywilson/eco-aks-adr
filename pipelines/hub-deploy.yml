@@ -21,13 +21,16 @@ trigger:
     include:
       - infra/terraform/hub/**
 
-# Pool selection: defaults to self-hosted. Set USE_SELF_HOSTED=false (ADO pipeline
-# variable) only if CI/CD bootstrap hasn't completed yet.
-${{ if ne(variables['USE_SELF_HOSTED'], 'false') }}:
-  pool:
+parameters:
+  - name: useSelfHosted
+    displayName: 'Use self-hosted agents'
+    type: boolean
+    default: true
+
+pool:
+  ${{ if eq(parameters.useSelfHosted, true) }}:
     name: 'aci-cicd-pool'
-${{ if eq(variables['USE_SELF_HOSTED'], 'false') }}:
-  pool:
+  ${{ else }}:
     vmImage: 'ubuntu-latest'
 
 variables:
