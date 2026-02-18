@@ -125,30 +125,46 @@ variable "state_storage_account_id" {
   default     = ""
 }
 
-# --- Hub Integration (Optional — empty defaults for bootstrap) ---
+# --- Hub Integration (REQUIRED — hub must be deployed first) ---
 
 variable "hub_vnet_id" {
-  description = "Hub VNet resource ID for peering. Empty string disables peering."
+  description = "Hub VNet resource ID for peering"
   type        = string
-  default     = ""
+
+  validation {
+    condition     = can(regex("^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.Network/virtualNetworks/[^/]+$", var.hub_vnet_id))
+    error_message = "hub_vnet_id must be a valid Azure VNet resource ID."
+  }
 }
 
 variable "hub_dns_resolver_ip" {
-  description = "Hub DNS resolver inbound IP for VNet custom DNS. Empty string uses Azure default DNS."
+  description = "Hub DNS resolver inbound IP for VNet custom DNS"
   type        = string
-  default     = ""
+
+  validation {
+    condition     = can(regex("^\\d+\\.\\d+\\.\\d+\\.\\d+$", var.hub_dns_resolver_ip))
+    error_message = "hub_dns_resolver_ip must be a valid IPv4 address."
+  }
 }
 
 variable "hub_acr_dns_zone_id" {
-  description = "Hub privatelink.azurecr.io DNS zone ID for ACR PE. Empty string creates CI/CD-owned zone."
+  description = "Hub privatelink.azurecr.io DNS zone ID for ACR private endpoint"
   type        = string
-  default     = ""
+}
+
+variable "hub_blob_dns_zone_id" {
+  description = "Hub privatelink.blob.core.windows.net DNS zone ID for state SA private endpoint"
+  type        = string
+}
+
+variable "hub_vault_dns_zone_id" {
+  description = "Hub privatelink.vaultcore.azure.net DNS zone ID for platform KV private endpoint"
+  type        = string
 }
 
 variable "hub_log_analytics_workspace_id" {
-  description = "Hub Log Analytics workspace resource ID. Empty string disables centralized logging."
+  description = "Hub Log Analytics workspace resource ID for centralized monitoring"
   type        = string
-  default     = ""
 }
 
 # --- Tags ---

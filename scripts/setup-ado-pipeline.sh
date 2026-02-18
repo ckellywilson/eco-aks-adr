@@ -492,12 +492,13 @@ configure_pipeline() {
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# Step 7: Create Terraform state storage account + blob containers
+# Step 7: Create Terraform state storage accounts
+#   - Hub state SA: public access, in its own RG (hub pipeline uses MS-hosted agents)
+#   - CI/CD+spoke state SA: private (locked down after CI/CD agents exist), in CI/CD RG
 # ---------------------------------------------------------------------------
 create_state_storage() {
-  log "Step 7: Creating Terraform state storage account..."
+  log "Step 7: Creating Terraform state storage accounts..."
 
-  local state_rg="rg-cicd-${LOCATION_CODE}-${ENVIRONMENT}"
   local sa_suffix
   if command -v md5sum &>/dev/null; then
     sa_suffix=$(echo "${AZURE_SUBSCRIPTION_ID}-tfstate" | md5sum | cut -c1-8)
@@ -506,24 +507,24 @@ create_state_storage() {
   else
     fail "Neither md5sum nor md5 command found for computing storage account suffix"
   fi
-  # Azure SA names: 3-24 chars, lowercase alphanumeric only
-  local sa_name="sttfstate${LOCATION_CODE}${sa_suffix}"
 
-  # Create resource group (shared with CI/CD landing zone)
-  if az group show -n "$state_rg" &> /dev/null; then
-    warn "Resource group '$state_rg' already exists. Reusing."
+  # --- Hub state SA (public, dedicated RG) ---
+  local hub_state_rg="rg-tfstate-hub-${LOCATION_CODE}-${ENVIRONMENT}"
+  local hub_sa_name="sttfstatehub${LOCATION_CODE}${sa_suffix}"
+
+  if az group show -n "$hub_state_rg" &> /dev/null; then
+    warn "Resource group '$hub_state_rg' already exists. Reusing."
   else
-    az group create -n "$state_rg" -l "$LOCATION" -o none
-    log "  Created resource group: $state_rg"
+    az group create -n "$hub_state_rg" -l "$LOCATION" -o none
+    log "  Created resource group: $hub_state_rg"
   fi
 
-  # Create storage account
-  if az storage account show -n "$sa_name" -g "$state_rg" &> /dev/null 2>&1; then
-    warn "Storage account '$sa_name' already exists. Reusing."
+  if az storage account show -n "$hub_sa_name" -g "$hub_state_rg" &> /dev/null 2>&1; then
+    warn "Storage account '$hub_sa_name' already exists. Reusing."
   else
     az storage account create \
-      -n "$sa_name" \
-      -g "$state_rg" \
+      -n "$hub_sa_name" \
+      -g "$hub_state_rg" \
       -l "$LOCATION" \
       --sku Standard_LRS \
       --kind StorageV2 \
@@ -531,34 +532,86 @@ create_state_storage() {
       --allow-blob-public-access false \
       --https-only true \
       -o none
-    log "  Created storage account: $sa_name"
+    log "  Created hub state SA: $hub_sa_name"
   fi
 
-  # Create blob containers for each landing zone
-  for container in tfstate-hub tfstate-cicd tfstate-spoke; do
-    if az storage container show -n "$container" --account-name "$sa_name" --auth-mode login &> /dev/null 2>&1; then
+  if az storage container show -n "tfstate-hub" --account-name "$hub_sa_name" --auth-mode login &> /dev/null 2>&1; then
+    warn "  Container 'tfstate-hub' already exists. Skipping."
+  else
+    az storage container create \
+      -n "tfstate-hub" \
+      --account-name "$hub_sa_name" \
+      --auth-mode login \
+      -o none
+    log "  Created container: tfstate-hub"
+  fi
+
+  HUB_STATE_SA_NAME="$hub_sa_name"
+  HUB_STATE_SA_RG="$hub_state_rg"
+
+  # --- CI/CD+spoke state SA (private after lockdown, CI/CD RG) ---
+  local cicd_state_rg="rg-cicd-${LOCATION_CODE}-${ENVIRONMENT}"
+  local cicd_sa_name="sttfstate${LOCATION_CODE}${sa_suffix}"
+
+  if az group show -n "$cicd_state_rg" &> /dev/null; then
+    warn "Resource group '$cicd_state_rg' already exists. Reusing."
+  else
+    az group create -n "$cicd_state_rg" -l "$LOCATION" -o none
+    log "  Created resource group: $cicd_state_rg"
+  fi
+
+  if az storage account show -n "$cicd_sa_name" -g "$cicd_state_rg" &> /dev/null 2>&1; then
+    warn "Storage account '$cicd_sa_name' already exists. Reusing."
+  else
+    az storage account create \
+      -n "$cicd_sa_name" \
+      -g "$cicd_state_rg" \
+      -l "$LOCATION" \
+      --sku Standard_LRS \
+      --kind StorageV2 \
+      --min-tls-version TLS1_2 \
+      --allow-blob-public-access false \
+      --https-only true \
+      -o none
+    log "  Created CI/CD+spoke state SA: $cicd_sa_name"
+  fi
+
+  for container in tfstate-cicd tfstate-spoke; do
+    if az storage container show -n "$container" --account-name "$cicd_sa_name" --auth-mode login &> /dev/null 2>&1; then
       warn "  Container '$container' already exists. Skipping."
     else
       az storage container create \
         -n "$container" \
-        --account-name "$sa_name" \
+        --account-name "$cicd_sa_name" \
         --auth-mode login \
         -o none
       log "  Created container: $container"
     fi
   done
 
-  STATE_SA_NAME="$sa_name"
-  STATE_SA_RG="$state_rg"
-  local state_sa_id="/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${state_rg}/providers/Microsoft.Storage/storageAccounts/${sa_name}"
+  STATE_SA_NAME="$cicd_sa_name"
+  STATE_SA_RG="$cicd_state_rg"
+  local state_sa_id="/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${cicd_state_rg}/providers/Microsoft.Storage/storageAccounts/${cicd_sa_name}"
   STATE_SA_ID="$state_sa_id"
-  log "  State SA: $sa_name (in $state_rg)"
+
   log ""
-  log "  NEXT STEPS (Terraform state configuration):"
-  log "    1) Update backend-prod.tfbackend in each module:"
-  log "         storage_account_name = \"${sa_name}\""
-  log "         resource_group_name  = \"${state_rg}\""
-  log "    2) Set state_storage_account_id in infra/terraform/cicd/prod.tfvars:"
+  log "  Hub state SA:       $hub_sa_name (in $hub_state_rg) — public access"
+  log "  CI/CD+spoke SA:     $cicd_sa_name (in $cicd_state_rg) — lock down after agents exist"
+  log ""
+  log "  NEXT STEPS (Terraform backend configuration):"
+  log "    1) Hub backend (infra/terraform/hub/backend-prod.tfbackend):"
+  log "         resource_group_name  = \"${hub_state_rg}\""
+  log "         storage_account_name = \"${hub_sa_name}\""
+  log "         container_name       = \"tfstate-hub\""
+  log "    2) CI/CD backend (infra/terraform/cicd/backend-prod.tfbackend):"
+  log "         resource_group_name  = \"${cicd_state_rg}\""
+  log "         storage_account_name = \"${cicd_sa_name}\""
+  log "         container_name       = \"tfstate-cicd\""
+  log "    3) Spoke backend (infra/terraform/spoke/backend-prod.tfbackend):"
+  log "         resource_group_name  = \"${cicd_state_rg}\""
+  log "         storage_account_name = \"${cicd_sa_name}\""
+  log "         container_name       = \"tfstate-spoke\""
+  log "    4) Set state_storage_account_id in infra/terraform/cicd/prod.tfvars:"
   log "         state_storage_account_id = \"${state_sa_id}\""
 }
 
@@ -687,16 +740,18 @@ main() {
   log "  Service Conn:  $SERVICE_CONNECTION_NAME (Workload Identity Federation)"
   log "  App Reg:       $APP_ID"
   log "  Repo Type:     $REPO_TYPE"
-  log "  State SA:      $STATE_SA_NAME (in $STATE_SA_RG)"
+  log "  Hub state SA:  $HUB_STATE_SA_NAME (in $HUB_STATE_SA_RG) — public"
+  log "  CICD state SA: $STATE_SA_NAME (in $STATE_SA_RG) — lock down after agents"
   log "  Platform KV:   $PLATFORM_KV_ID"
   log ""
   log "  PLATFORM_KV_ID has been set as a pipeline variable."
-  log "  To trigger: push to main or run manually in ADO"
   log ""
-  log "  After first CI/CD deploy with Container App Job agents:"
-  log "    1. Register the CI/CD UAMI as a service principal in your ADO org"
-  log "    2. Add it to the Project Collection Service Accounts group"
-  log "    3. All pipelines will use self-hosted pool: aci-cicd-pool"
+  log "  Deployment order:"
+  log "    1. Hub pipeline (MS-hosted agents) — creates DNS zones, resolver, VNet"
+  log "    2. CI/CD pipeline (MS-hosted, first run) — creates agents, PEs"
+  log "    3. Register CI/CD UAMI in ADO Project Collection Service Accounts"
+  log "    4. Lock down CI/CD+spoke state SA (disable public access)"
+  log "    5. Spoke pipeline (self-hosted agents) — creates AKS, ACR, KV"
 }
 
 main "$@"

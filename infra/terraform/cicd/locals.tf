@@ -8,17 +8,11 @@ locals {
 
   location_code = lookup(local.location_map, var.location, substr(var.location, 0, 4))
 
-  # Hub integration flags — empty string = disabled (bootstrap mode)
-  hub_integrated = var.hub_vnet_id != ""
-  hub_dns_set    = var.hub_dns_resolver_ip != ""
-  hub_acr_zone   = var.hub_acr_dns_zone_id != ""
-  hub_log_ws     = var.hub_log_analytics_workspace_id != ""
+  # Derive hub RG + VNet name from hub_vnet_id
+  hub_rg_name   = split("/", var.hub_vnet_id)[4]
+  hub_vnet_name = split("/", var.hub_vnet_id)[8]
 
-  # Derive hub RG + VNet name from hub_vnet_id when available
-  hub_rg_name   = local.hub_integrated ? split("/", var.hub_vnet_id)[4] : ""
-  hub_vnet_name = local.hub_integrated ? split("/", var.hub_vnet_id)[8] : ""
-
-  # State SA — derive name from resource ID
+  # State SA — derive enablement from resource ID
   state_sa_enabled = var.state_storage_account_id != ""
 
   common_tags = merge(

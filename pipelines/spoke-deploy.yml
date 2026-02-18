@@ -10,7 +10,8 @@
 #      - Name: PLATFORM_KV_ID, Value: /subscriptions/.../resourceGroups/.../providers/Microsoft.KeyVault/vaults/...
 #
 # CRITICAL: Hub infrastructure must be deployed BEFORE spoke deployment.
-# This pipeline REQUIRES self-hosted agents for private AKS API server access.
+# This pipeline REQUIRES self-hosted agents — private AKS API server and
+# private state SA are only accessible from the CI/CD VNet.
 
 trigger:
   branches:

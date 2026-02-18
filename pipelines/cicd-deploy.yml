@@ -2,12 +2,12 @@
 # Deploys CI/CD Terraform code per .github/instructions/cicd-deploy.instructions.md
 #
 # Prerequisites:
-#   1. (Optional) Hub infrastructure for full integration, OR run in bootstrap mode first
+#   1. Hub infrastructure deployed (provides DNS zones, resolver, VNet for peering)
 #   2. Run scripts/setup-ado-pipeline.sh to create ARM service connection + Platform KV
 #   3. Set pipeline variable PLATFORM_KV_ID to the platform Key Vault resource ID
 #
-# Bootstrap: During initial setup, this pipeline runs on Microsoft-hosted agents.
-# After CI/CD agents are deployed and registered, it uses self-hosted agents.
+# First run: Set USE_SELF_HOSTED=false (or leave unset) to use MS-hosted agents.
+# After agents are deployed and registered in ADO, set USE_SELF_HOSTED=true.
 
 trigger:
   branches:

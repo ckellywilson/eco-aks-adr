@@ -31,10 +31,12 @@ state_storage_account_id = "/subscriptions/f8a5f387-2f0b-42f5-b71f-5ee02b8967cf/
 # Platform Key Vault (set via pipeline variable or manually)
 # platform_key_vault_id = "<set-by-pipeline-or-manually>"
 
-# Hub integration (set after hub is deployed; empty = bootstrap mode)
+# Hub integration (REQUIRED — hub must be deployed first)
 hub_vnet_id                    = "/subscriptions/f8a5f387-2f0b-42f5-b71f-5ee02b8967cf/resourceGroups/rg-hub-eus2-prod/providers/Microsoft.Network/virtualNetworks/vnet-hub-prod-eus2"
 hub_dns_resolver_ip            = "10.0.6.4"
 hub_acr_dns_zone_id            = "/subscriptions/f8a5f387-2f0b-42f5-b71f-5ee02b8967cf/resourceGroups/rg-hub-eus2-prod/providers/Microsoft.Network/privateDnsZones/privatelink.azurecr.io"
+hub_blob_dns_zone_id           = "/subscriptions/f8a5f387-2f0b-42f5-b71f-5ee02b8967cf/resourceGroups/rg-hub-eus2-prod/providers/Microsoft.Network/privateDnsZones/privatelink.blob.core.windows.net"
+hub_vault_dns_zone_id          = "/subscriptions/f8a5f387-2f0b-42f5-b71f-5ee02b8967cf/resourceGroups/rg-hub-eus2-prod/providers/Microsoft.Network/privateDnsZones/privatelink.vaultcore.azure.net"
 hub_log_analytics_workspace_id = "/subscriptions/f8a5f387-2f0b-42f5-b71f-5ee02b8967cf/resourceGroups/rg-hub-eus2-prod/providers/Microsoft.OperationalInsights/workspaces/law-hub-prod-eus2"
 
 # Resource tags
