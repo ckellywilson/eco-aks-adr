@@ -13,6 +13,7 @@ module "hub_vnet" {
   resource_group_name = azurerm_resource_group.hub.name
   name                = "vnet-hub-${var.environment}-${local.location_code}"
   location            = var.location
+  subscription_id     = var.subscription_id
 
   address_space = var.hub_vnet_address_space
 
@@ -372,6 +373,7 @@ module "spoke_vnet" {
   resource_group_name = azurerm_resource_group.spoke[each.key].name
   name                = each.value.name
   location            = var.location
+  subscription_id     = var.subscription_id
 
   address_space = each.value.address_space
 
