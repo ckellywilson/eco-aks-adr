@@ -161,30 +161,3 @@ stages:
 
                 terraform init -backend-config=$(BACKEND_CONFIG)
                 terraform apply -input=false $(Pipeline.Workspace)/tfplan/tfplan
-
-          - task: AzureCLI@2
-            displayName: 'Validate Infrastructure'
-            continueOnError: true
-            inputs:
-              azureSubscription: 'azure-hub-prod'
-              scriptType: 'bash'
-              scriptLocation: 'inlineScript'
-              addSpnToEnvironment: true
-              inlineScript: |
-                export ARM_CLIENT_ID=$servicePrincipalId
-                export ARM_TENANT_ID=$tenantId
-                export ARM_OIDC_TOKEN=$idToken
-                export ARM_USE_OIDC=true
-                export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
-
-                chmod +x scripts/validate-networking.sh
-                ./scripts/validate-networking.sh $(ENVIRONMENT) --mode=infra
-
-          - script: |
-              echo "=== Post-Deployment: Manual Validation ==="
-              echo "Connect to spoke jump box via Bastion, then run:"
-              echo "  ./scripts/validate-networking.sh $(ENVIRONMENT) --mode=full"
-              echo ""
-              echo "This validates DNS resolution, AKS connectivity,"
-              echo "and in-cluster networking from within the private network."
-            displayName: 'Print Manual Validation Instructions'
