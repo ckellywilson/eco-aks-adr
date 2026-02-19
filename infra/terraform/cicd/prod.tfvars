@@ -32,21 +32,20 @@ state_storage_account_id = "/subscriptions/f8a5f387-2f0b-42f5-b71f-5ee02b8967cf/
 # platform_key_vault_id = "<set-by-pipeline-or-manually>"
 
 # =============================================================================
-# Hub Integration — Day 2 (leave empty/commented for bootstrap, populate after hub exists)
+# Hub Integration — Day 2
 # =============================================================================
-# After hub is deployed, populate these values and re-apply CI/CD to add:
+# Populated from hub terraform outputs. Enables:
 #   - Bidirectional VNet peering (CI/CD ↔ hub)
 #   - Custom DNS (hub resolver IP) replacing Azure default DNS
 #   - Hub DNS zones replacing CI/CD-owned zones
 #   - Hub+Spoke SA private endpoint for self-hosted agent access
-#
-# hub_vnet_id                        = "/subscriptions/.../providers/Microsoft.Network/virtualNetworks/vnet-hub-prod-eus2"
-# hub_dns_resolver_ip                = "10.0.6.4"
-# hub_acr_dns_zone_id                = "/subscriptions/.../providers/Microsoft.Network/privateDnsZones/privatelink.azurecr.io"
-# hub_blob_dns_zone_id               = "/subscriptions/.../providers/Microsoft.Network/privateDnsZones/privatelink.blob.core.windows.net"
-# hub_vault_dns_zone_id              = "/subscriptions/.../providers/Microsoft.Network/privateDnsZones/privatelink.vaultcore.azure.net"
-# hub_log_analytics_workspace_id     = "/subscriptions/.../providers/Microsoft.OperationalInsights/workspaces/law-hub-prod-eus2"
-# hub_spoke_state_storage_account_id = "/subscriptions/.../providers/Microsoft.Storage/storageAccounts/<hub-spoke-sa-name>"
+hub_vnet_id                        = "/subscriptions/f8a5f387-2f0b-42f5-b71f-5ee02b8967cf/resourceGroups/rg-hub-eus2-prod/providers/Microsoft.Network/virtualNetworks/vnet-hub-prod-eus2"
+hub_dns_resolver_ip                = "10.0.6.4"
+hub_acr_dns_zone_id                = "/subscriptions/f8a5f387-2f0b-42f5-b71f-5ee02b8967cf/resourceGroups/rg-hub-eus2-prod/providers/Microsoft.Network/privateDnsZones/privatelink.azurecr.io"
+hub_blob_dns_zone_id               = "/subscriptions/f8a5f387-2f0b-42f5-b71f-5ee02b8967cf/resourceGroups/rg-hub-eus2-prod/providers/Microsoft.Network/privateDnsZones/privatelink.blob.core.windows.net"
+hub_vault_dns_zone_id              = "/subscriptions/f8a5f387-2f0b-42f5-b71f-5ee02b8967cf/resourceGroups/rg-hub-eus2-prod/providers/Microsoft.Network/privateDnsZones/privatelink.vaultcore.azure.net"
+hub_log_analytics_workspace_id     = "/subscriptions/f8a5f387-2f0b-42f5-b71f-5ee02b8967cf/resourceGroups/rg-hub-eus2-prod/providers/Microsoft.OperationalInsights/workspaces/law-hub-prod-eus2"
+hub_spoke_state_storage_account_id = "/subscriptions/f8a5f387-2f0b-42f5-b71f-5ee02b8967cf/resourceGroups/rg-tfstate-eus2-prod/providers/Microsoft.Storage/storageAccounts/sttfstateeus2257fb243"
 
 # Resource tags
 tags = {
