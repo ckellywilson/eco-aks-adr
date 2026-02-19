@@ -6,8 +6,12 @@
 #   2. Set pipeline variable PLATFORM_KV_ID to the platform Key Vault resource ID
 #   3. (Optional) Hub deployed — populate hub variables in prod.tfvars for Day 2 integration
 #
-# First run: Set USE_SELF_HOSTED=false (or leave unset) to use MS-hosted agents.
-# After agents are deployed and registered in ADO, set USE_SELF_HOSTED=true.
+# First run: Set useSelfHosted=false (default) to use MS-hosted agents.
+# After agents are deployed and registered in ADO, set useSelfHosted=true.
+#
+# WARNING: Day 2 hub integration changes (populating hub_* variables in prod.tfvars)
+# modify VNet DNS and DNS zones, which triggers Container App Environment recreation.
+# This DESTROYS the running agent mid-pipeline. Always run Day 2 with useSelfHosted=false.
 
 trigger:
   branches:

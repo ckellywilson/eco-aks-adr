@@ -475,10 +475,12 @@ Phase 3: Hub deployment (hub pipeline — runs on self-hosted agents)
   └─→ Spoke RG + VNet (hub_managed, custom DNS → hub resolver)
   └─→ Bidirectional VNet Peering (hub ↔ spoke)
 
-Phase 4: CI/CD Day 2 (cicd pipeline — re-apply with hub variables)
+Phase 4: CI/CD Day 2 (cicd pipeline — ⚠️ MUST use MS-hosted agents)
   └─→ Adds VNet peering (CI/CD ↔ hub), custom DNS (hub resolver IP)
   └─→ Switches to hub DNS zones (ACR, blob, vault) — CI/CD zones removed
   └─→ Creates PE for Hub+Spoke SA (so self-hosted agents can reach hub/spoke state)
+  └─→ ⚠️ VNet DNS + DNS zone changes trigger Container App Environment recreation
+  └─→ ⚠️ Running on self-hosted agents will destroy the agent mid-pipeline
 
 Phase 5: Spoke deployment (spoke pipeline — runs on self-hosted agents)
   └─→ AKS cluster, ACR, Key Vault, etc. (see spoke spec)
@@ -493,7 +495,7 @@ The bootstrap-first pattern eliminates the chicken-and-egg problem. CI/CD deploy
 | 1 — CI/CD (bootstrap) | `cicd-deploy` | **MS-hosted agents** (first run only) | Self-hosted agents are being created |
 | 2 — ADO Registration | Manual | — | Register UAMI in `Project Collection Service Accounts` |
 | 3 — Hub | `hub-deploy` | **Self-hosted agents** (`aci-cicd-pool`) | Self-hosted agents now available |
-| 4 — CI/CD Day 2 | `cicd-deploy` | **Self-hosted agents** (`aci-cicd-pool`) | Add hub integration (peering, DNS) |
+| 4 — CI/CD Day 2 | `cicd-deploy` | **MS-hosted agents** (`useSelfHosted=false`) | ⚠️ VNet/DNS changes recreate Container App Environment — self-hosted agents would self-destruct |
 | 5 — Spoke | `spoke-deploy` | **Self-hosted agents** (`aci-cicd-pool`) | Agents can reach private AKS API server |
 
 **Why the spoke uses self-hosted agents**: The spoke AKS cluster is private — its API server is only accessible from peered VNets. Microsoft-hosted agents cannot reach private endpoints. The CI/CD VNet is peered with the hub, which is peered with the spoke, enabling Container App Job agents to reach the AKS API server through the peered network.
@@ -505,7 +507,7 @@ CI/CD (MS-hosted, bootstrap) ──→ [Manual: Register UAMI in ADO]
   ↓
 Hub (self-hosted)
   ↓
-CI/CD Day 2 (self-hosted, add hub integration)
+CI/CD Day 2 (⚠️ MS-hosted — VNet/DNS changes recreate Container App Env)
   ↓
 Spoke (self-hosted)
 ```
