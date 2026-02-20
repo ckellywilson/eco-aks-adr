@@ -50,6 +50,28 @@ resource "azurerm_virtual_network_peering" "hub_to_cicd" {
   allow_forwarded_traffic   = true
 }
 
+# --- Spoke VNet Peering (for private AKS access) ---
+# VNet peering is not transitive — CI/CD ↔ Hub peering does NOT give CI/CD
+# network access to spokes. Each spoke with a private AKS cluster needs a
+# direct peering so agents can reach the AKS API server.
+resource "azurerm_virtual_network_peering" "cicd_to_spoke" {
+  for_each                  = var.spoke_vnet_ids
+  name                      = "peer-cicd-to-${each.key}"
+  resource_group_name       = azurerm_resource_group.cicd.name
+  virtual_network_name      = azurerm_virtual_network.cicd.name
+  remote_virtual_network_id = each.value
+  allow_forwarded_traffic   = true
+}
+
+resource "azurerm_virtual_network_peering" "spoke_to_cicd" {
+  for_each                  = var.spoke_vnet_ids
+  name                      = "peer-${each.key}-to-cicd"
+  resource_group_name       = split("/", each.value)[4]
+  virtual_network_name      = split("/", each.value)[8]
+  remote_virtual_network_id = azurerm_virtual_network.cicd.id
+  allow_forwarded_traffic   = true
+}
+
 # --- Subnets ---
 # Container App Environment subnet — replaces ACI agents subnet
 resource "azurerm_subnet" "container_app" {

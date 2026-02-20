@@ -47,6 +47,12 @@ hub_vault_dns_zone_id              = "/subscriptions/f8a5f387-2f0b-42f5-b71f-5ee
 hub_log_analytics_workspace_id     = "/subscriptions/f8a5f387-2f0b-42f5-b71f-5ee02b8967cf/resourceGroups/rg-hub-eus2-prod/providers/Microsoft.OperationalInsights/workspaces/law-hub-prod-eus2"
 hub_spoke_state_storage_account_id = "/subscriptions/f8a5f387-2f0b-42f5-b71f-5ee02b8967cf/resourceGroups/rg-tfstate-eus2-prod/providers/Microsoft.Storage/storageAccounts/sttfstateeus2257fb243"
 
+# Spoke VNet peering — enables CI/CD agents to reach private AKS API servers.
+# Add each spoke VNet here as new spokes are deployed.
+spoke_vnet_ids = {
+  "spoke-aks-prod" = "/subscriptions/f8a5f387-2f0b-42f5-b71f-5ee02b8967cf/resourceGroups/rg-aks-eus2-prod/providers/Microsoft.Network/virtualNetworks/vnet-aks-prod-eus2"
+}
+
 # Resource tags
 tags = {
   Purpose     = "AKS Landing Zone CI/CD"
