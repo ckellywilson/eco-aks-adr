@@ -63,6 +63,8 @@ resource "azurerm_virtual_network_peering" "cicd_to_spoke" {
   allow_forwarded_traffic   = true
 }
 
+# NOTE: CI/CD service principal needs Network Contributor on each spoke RG
+# to create this peering direction (same pattern as hub_to_cicd peering).
 resource "azurerm_virtual_network_peering" "spoke_to_cicd" {
   for_each                  = var.spoke_vnet_ids
   name                      = "peer-${each.key}-to-cicd"
