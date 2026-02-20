@@ -128,6 +128,6 @@ output "nginx_internal_lb_ip" {
 }
 
 output "nginx_configuration_note" {
-  description = "Instructions for configuring NGINX ingress controller with internal load balancer"
-  value       = var.enable_web_app_routing ? "After deployment, create a NginxIngressController resource with loadBalancerAnnotations: 'service.beta.kubernetes.io/azure-load-balancer-internal: true' and 'service.beta.kubernetes.io/azure-load-balancer-internal-ip: ${var.nginx_internal_lb_ip}'. See manifests/nginx-internal-controller.yaml for a complete example." : null
+  description = "NGINX ingress controller deployment status"
+  value       = var.enable_web_app_routing ? "NGINX internal controller manifest is automatically applied by the spoke pipeline PostDeploy stage. Verify with: kubectl get nginxingresscontroller nginx-internal && kubectl get svc -n app-routing-system" : null
 }
