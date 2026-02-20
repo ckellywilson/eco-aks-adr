@@ -195,6 +195,19 @@ variable "hub_log_analytics_workspace_id" {
   default     = ""
 }
 
+# --- Spoke VNet Peering (for kubectl/Helm access to private AKS clusters) ---
+
+variable "spoke_vnet_ids" {
+  description = "Map of spoke name to VNet resource ID for bidirectional peering. Enables CI/CD agents to reach private AKS API servers. VNet peering is not transitive, so each spoke needs a direct peering."
+  type        = map(string)
+  default     = {}
+
+  validation {
+    condition     = alltrue([for v in values(var.spoke_vnet_ids) : can(regex("^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.Network/virtualNetworks/[^/]+$", v))])
+    error_message = "Each spoke_vnet_ids value must be a valid Azure VNet resource ID."
+  }
+}
+
 # --- Tags ---
 
 variable "tags" {
