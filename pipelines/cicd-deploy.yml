@@ -1,0 +1,210 @@
+# CI/CD Landing Zone Deployment Pipeline
+# Deploys CI/CD Terraform code per .github/instructions/cicd-deploy.instructions.md
+#
+# Prerequisites:
+#   1. Run scripts/setup-ado-pipeline.sh to create ARM service connection + Platform KV
+#   2. Set pipeline variable PLATFORM_KV_ID to the platform Key Vault resource ID
+#   3. (Optional) Hub deployed — populate hub variables in prod.tfvars for Day 2 integration
+#
+# First run: Set useSelfHosted=false (default) to use MS-hosted agents.
+# After agents are deployed and registered in ADO, set useSelfHosted=true.
+#
+# WARNING: Day 2 hub integration changes (populating hub_* variables in prod.tfvars)
+# modify VNet DNS and DNS zones, which triggers Container App Environment recreation.
+# This DESTROYS the running agent mid-pipeline. Always run Day 2 with useSelfHosted=false.
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - infra/terraform/cicd/**
+
+parameters:
+  - name: useSelfHosted
+    displayName: 'Use self-hosted agents (set to true after bootstrap)'
+    type: boolean
+    default: false
+
+variables:
+  - name: TF_WORKING_DIR
+    value: 'infra/terraform/cicd'
+  - name: ENVIRONMENT
+    value: 'prod'
+  - name: ARM_USE_OIDC
+    value: 'true'
+  - name: TF_VAR_FILE
+    value: 'prod.tfvars'
+  - name: BACKEND_CONFIG
+    value: 'backend-prod.tfbackend'
+
+stages:
+  - stage: Validate
+    displayName: 'Terraform Validate'
+    jobs:
+      - job: Validate
+        displayName: 'Format & Validate'
+        pool:
+          ${{ if eq(parameters.useSelfHosted, true) }}:
+            name: 'aci-cicd-pool'
+          ${{ else }}:
+            vmImage: 'ubuntu-latest'
+        steps:
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: '1.14.5'
+
+          - task: AzureCLI@2
+            displayName: 'Terraform Init & Validate'
+            inputs:
+              azureSubscription: 'azure-cicd-prod'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
+              inlineScript: |
+                export ARM_CLIENT_ID=$servicePrincipalId
+                export ARM_TENANT_ID=$tenantId
+                export ARM_OIDC_TOKEN=$idToken
+                export ARM_USE_OIDC=true
+                export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+
+                cd $(TF_WORKING_DIR)
+
+                terraform init -backend-config=$(BACKEND_CONFIG)
+                terraform fmt -check -recursive
+                terraform validate
+
+  - stage: Plan
+    displayName: 'Terraform Plan'
+    dependsOn: Validate
+    jobs:
+      - job: Plan
+        displayName: 'Generate Plan'
+        pool:
+          ${{ if eq(parameters.useSelfHosted, true) }}:
+            name: 'aci-cicd-pool'
+          ${{ else }}:
+            vmImage: 'ubuntu-latest'
+        steps:
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: '1.14.5'
+
+          - task: AzureCLI@2
+            displayName: 'Terraform Plan'
+            inputs:
+              azureSubscription: 'azure-cicd-prod'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
+              inlineScript: |
+                export ARM_CLIENT_ID=$servicePrincipalId
+                export ARM_TENANT_ID=$tenantId
+                export ARM_OIDC_TOKEN=$idToken
+                export ARM_USE_OIDC=true
+                export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+
+                cd $(TF_WORKING_DIR)
+
+                terraform init -backend-config=$(BACKEND_CONFIG)
+                terraform plan \
+                  -var-file="$(TF_VAR_FILE)" \
+                  -var="platform_key_vault_id=$(PLATFORM_KV_ID)" \
+                  -out=tfplan \
+                  -input=false
+
+          - publish: $(TF_WORKING_DIR)/tfplan
+            artifact: tfplan
+            displayName: 'Publish Plan Artifact'
+
+  - stage: Apply
+    displayName: 'Terraform Apply'
+    dependsOn: Plan
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - job: Apply
+        displayName: 'Apply Infrastructure'
+        pool:
+          ${{ if eq(parameters.useSelfHosted, true) }}:
+            name: 'aci-cicd-pool'
+          ${{ else }}:
+            vmImage: 'ubuntu-latest'
+        steps:
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: '1.14.5'
+
+          - download: current
+            artifact: tfplan
+            displayName: 'Download Plan Artifact'
+
+          - task: AzureCLI@2
+            displayName: 'Terraform Apply'
+            inputs:
+              azureSubscription: 'azure-cicd-prod'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
+              inlineScript: |
+                export ARM_CLIENT_ID=$servicePrincipalId
+                export ARM_TENANT_ID=$tenantId
+                export ARM_OIDC_TOKEN=$idToken
+                export ARM_USE_OIDC=true
+                export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+
+                cd $(TF_WORKING_DIR)
+
+                terraform init -backend-config=$(BACKEND_CONFIG)
+                terraform apply -input=false $(Pipeline.Workspace)/tfplan/tfplan
+
+          - task: AzureCLI@2
+            displayName: 'Print UAMI Registration Instructions'
+            inputs:
+              azureSubscription: 'azure-cicd-prod'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
+              inlineScript: |
+                export ARM_CLIENT_ID=$servicePrincipalId
+                export ARM_TENANT_ID=$tenantId
+                export ARM_OIDC_TOKEN=$idToken
+                export ARM_USE_OIDC=true
+                export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+
+                cd $(TF_WORKING_DIR)
+                terraform init -backend-config=$(BACKEND_CONFIG) -input=false > /dev/null
+
+                UAMI_CLIENT_ID=$(terraform output -raw agent_uami_client_id)
+                UAMI_PRINCIPAL_ID=$(terraform output -raw agent_uami_principal_id)
+                POOL_NAME=$(terraform output -raw agent_pool_name 2>/dev/null || echo "aci-cicd-pool")
+
+                echo "============================================================"
+                echo "  MANUAL STEP REQUIRED: Register UAMI in ADO"
+                echo "============================================================"
+                echo ""
+                echo "UAMI Client ID:    ${UAMI_CLIENT_ID}"
+                echo "UAMI Principal ID: ${UAMI_PRINCIPAL_ID}"
+                echo "Agent Pool:        ${POOL_NAME}"
+                echo ""
+                echo "Steps (one-time setup, ~2 minutes):"
+                echo ""
+                echo "  1. ADO → Organization Settings → Users → Add users"
+                echo "     - Search by Client ID: ${UAMI_CLIENT_ID}"
+                echo "     - Access level: Stakeholder"
+                echo ""
+                echo "  2. ADO → Organization Settings → Permissions"
+                echo "     → Project Collection Service Accounts → Members → Add"
+                echo "     - Add the UAMI identity you just added in step 1"
+                echo ""
+                echo "  3. Verify: ADO → Organization Settings → Agent Pools"
+                echo "     → ${POOL_NAME} → Agents tab"
+                echo "     - A placeholder agent should appear (Offline when idle = expected)"
+                echo ""
+                echo "  4. Test: Run a minimal pipeline targeting pool: '${POOL_NAME}'"
+                echo ""
+                echo "After registration, proceed to deploy hub (hub-deploy pipeline)."
+                echo "============================================================"

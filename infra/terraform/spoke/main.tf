@@ -1,0 +1,663 @@
+# Spoke subnets — created in the hub-managed VNet
+# The hub creates the VNet; the spoke adds application-specific subnets
+resource "azurerm_subnet" "aks_nodes" {
+  name                 = "aks-nodes"
+  resource_group_name  = local.spoke_rg_name
+  virtual_network_name = local.spoke_vnet_name
+  address_prefixes     = ["10.1.0.0/22"]
+}
+
+resource "azurerm_subnet" "aks_system" {
+  name                 = "aks-system"
+  resource_group_name  = local.spoke_rg_name
+  virtual_network_name = local.spoke_vnet_name
+  address_prefixes     = ["10.1.4.0/24"]
+}
+
+resource "azurerm_subnet" "management" {
+  name                 = "management"
+  resource_group_name  = local.spoke_rg_name
+  virtual_network_name = local.spoke_vnet_name
+  address_prefixes     = ["10.1.5.0/24"]
+}
+
+# Associate route table with AKS node subnets (required for userDefinedRouting)
+resource "azurerm_subnet_route_table_association" "aks_nodes" {
+  subnet_id      = azurerm_subnet.aks_nodes.id
+  route_table_id = azurerm_route_table.spoke.id
+}
+
+resource "azurerm_subnet_route_table_association" "aks_system" {
+  subnet_id      = azurerm_subnet.aks_system.id
+  route_table_id = azurerm_route_table.spoke.id
+}
+
+resource "azurerm_subnet_network_security_group_association" "aks_nodes" {
+  subnet_id                 = azurerm_subnet.aks_nodes.id
+  network_security_group_id = azurerm_network_security_group.aks_nodes.id
+}
+
+# User-assigned managed identities
+resource "azurerm_user_assigned_identity" "aks_control_plane" {
+  name                = "uami-aks-cp-${var.environment}-${local.location_code}"
+  resource_group_name = local.spoke_rg_name
+  location            = var.location
+
+  tags = local.common_tags
+}
+
+resource "azurerm_user_assigned_identity" "aks_kubelet" {
+  name                = "uami-aks-kubelet-${var.environment}-${local.location_code}"
+  resource_group_name = local.spoke_rg_name
+  location            = var.location
+
+  tags = local.common_tags
+}
+
+# Grant control plane identity "Managed Identity Operator" role on kubelet identity
+resource "azurerm_role_assignment" "control_plane_to_kubelet" {
+  scope                = azurerm_user_assigned_identity.aks_kubelet.id
+  role_definition_name = "Managed Identity Operator"
+  principal_id         = azurerm_user_assigned_identity.aks_control_plane.principal_id
+}
+
+# Grant control plane identity "Network Contributor" role on spoke VNet
+# Required for AKS to manage network resources (load balancers, NICs, etc.)
+resource "azurerm_role_assignment" "control_plane_to_vnet" {
+  scope                = local.spoke_vnet_id
+  role_definition_name = "Network Contributor"
+  principal_id         = azurerm_user_assigned_identity.aks_control_plane.principal_id
+}
+
+# Grant control plane identity "Private DNS Zone Contributor" role on AKS private DNS zone
+# Required for BYOD (Bring Your Own DNS) pattern - allows AKS to register API server A records
+resource "azurerm_role_assignment" "control_plane_to_private_dns_zone" {
+  scope                = local.hub_outputs.private_dns_zone_ids["privatelink.${var.location}.azmk8s.io"]
+  role_definition_name = "Private DNS Zone Contributor"
+  principal_id         = azurerm_user_assigned_identity.aks_control_plane.principal_id
+}
+
+# Wait for role assignments to propagate in Azure AD
+# Increased to 90s to ensure Private DNS Zone Contributor role fully propagates
+# before AKS attempts to register private endpoint A records
+resource "time_sleep" "wait_for_rbac" {
+  depends_on = [
+    azurerm_role_assignment.control_plane_to_kubelet,
+    azurerm_role_assignment.control_plane_to_vnet,
+    azurerm_role_assignment.control_plane_to_private_dns_zone
+  ]
+  create_duration = "90s"
+}
+
+# Spoke VNet DNS zone link is NOT managed by Terraform — the AKS RP auto-creates a VNet link
+# from the spoke VNet to the AKS private DNS zone (privatelink.<region>.azmk8s.io) at cluster
+# create/start time, using the control plane UAMI. This is expected AKS platform behavior.
+# See spoke-deploy.instructions.md "Spoke VNet DNS Zone Linking" section for details.
+
+# Route table for spoke with UDR to hub firewall
+resource "azurerm_route_table" "spoke" {
+  name                = "rt-spoke-${var.environment}-${local.location_code}"
+  location            = var.location
+  resource_group_name = local.spoke_rg_name
+
+  tags = local.common_tags
+}
+
+# Default route to hub firewall (0.0.0.0/0 -> Firewall Private IP)
+resource "azurerm_route" "default_route" {
+  name                   = "route-default-to-firewall"
+  resource_group_name    = local.spoke_rg_name
+  route_table_name       = azurerm_route_table.spoke.name
+  address_prefix         = "0.0.0.0/0"
+  next_hop_type          = "VirtualAppliance"
+  next_hop_in_ip_address = local.firewall_private_ip
+}
+
+# Network Security Group for AKS nodes
+resource "azurerm_network_security_group" "aks_nodes" {
+  name                = "nsg-aks-nodes-${var.environment}-${local.location_code}"
+  location            = var.location
+  resource_group_name = local.spoke_rg_name
+
+  security_rule {
+    name                       = "AllowIntraSubnet"
+    priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "10.1.0.0/22"
+    destination_address_prefix = "10.1.0.0/22"
+  }
+
+  # NSG rules target the load balancer frontend IP (10.1.0.50) rather than the full subnet.
+  # This is the Azure Load Balancer standard pattern: traffic arrives at the frontend IP,
+  # and Azure LB handles distribution to backend pods across nodes. The destination IP
+  # represents the entry point for ingress traffic, not the backend pod IPs.
+  security_rule {
+    name                       = "AllowHttpFromHub"
+    priority                   = 110
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "80"
+    source_address_prefix      = "10.0.0.0/16"
+    destination_address_prefix = "10.1.0.50"
+    description                = "Allow HTTP traffic from hub VNet to NGINX ingress internal LB"
+  }
+
+  security_rule {
+    name                       = "AllowHttpsFromHub"
+    priority                   = 120
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "443"
+    source_address_prefix      = "10.0.0.0/16"
+    destination_address_prefix = "10.1.0.50"
+    description                = "Allow HTTPS traffic from hub VNet to NGINX ingress internal LB"
+  }
+
+  # These spoke-level rules enable access from non-AKS subnets within the spoke VNet
+  # (e.g., management subnet at 10.1.5.0/24 where jumpbox resides). The AllowIntraSubnet
+  # rule (priority 100) already permits traffic within the AKS nodes subnet (10.1.0.0/22).
+  security_rule {
+    name                       = "AllowHttpFromSpoke"
+    priority                   = 130
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "80"
+    source_address_prefix      = "10.1.0.0/16"
+    destination_address_prefix = "10.1.0.50"
+    description                = "Allow HTTP traffic from spoke VNet to NGINX ingress internal LB"
+  }
+
+  security_rule {
+    name                       = "AllowHttpsFromSpoke"
+    priority                   = 140
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "443"
+    source_address_prefix      = "10.1.0.0/16"
+    destination_address_prefix = "10.1.0.50"
+    description                = "Allow HTTPS traffic from spoke VNet to NGINX ingress internal LB"
+  }
+
+  security_rule {
+    name                       = "DenyAllInbound"
+    priority                   = 4096
+    direction                  = "Inbound"
+    access                     = "Deny"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  tags = local.common_tags
+}
+
+# VNet Peering is configured from hub side (hub-to-spoke and spoke-to-hub)
+# See hub/main.tf for peering resources
+
+# AKS Cluster with Azure Verified Module
+module "aks_cluster" {
+  source = "Azure/avm-res-containerservice-managedcluster/azurerm"
+  # Tested with v0.4.2. Using ~> 0.4 to allow patch updates (0.4.x) for bug fixes
+  # while maintaining compatibility with ingress_profile support introduced in 0.4.x
+  version = "~> 0.4"
+
+  name      = var.aks_cluster_name
+  location  = var.location
+  parent_id = data.azurerm_resource_group.spoke.id
+
+  # Cluster configuration
+  kubernetes_version = var.kubernetes_version
+
+  # SKU configuration
+  sku = {
+    name = "Base"
+    tier = var.aks_sku_tier
+  }
+
+  # DNS prefix
+  dns_prefix = var.aks_cluster_name
+
+  # Default agent pool (system pool)
+  default_agent_pool = {
+    name                      = "system"
+    vm_size                   = var.system_node_pool_size
+    count_of                  = var.system_node_pool_count
+    vnet_subnet_id            = azurerm_subnet.aks_system.id
+    enable_auto_scaling       = false
+    os_disk_size_gb           = 30
+    os_type                   = "Linux"
+    enable_encryption_at_host = true
+  }
+
+  # Network profile
+  network_profile = {
+    network_plugin      = var.aks_network_plugin # "azure"
+    network_plugin_mode = "overlay"              # Azure CNI Overlay
+    network_dataplane   = "cilium"               # Cilium for eBPF performance
+    network_policy      = var.aks_network_policy # "cilium" for L7 policies
+    pod_cidr            = var.aks_pod_cidr       # 192.168.0.0/16
+    service_cidr        = var.aks_service_cidr   # 172.16.0.0/16
+    dns_service_ip      = var.aks_dns_service_ip # 172.16.0.10
+    load_balancer_sku   = "standard"
+    outbound_type       = "userDefinedRouting" # Force through firewall
+  }
+
+  # API Server access profile for private cluster
+  # CRITICAL FIX: Property name is "private_dns_zone" NOT "private_dns_zone_id"
+  # The AVM module variable is named "private_dns_zone" (without _id suffix)
+  api_server_access_profile = var.enable_private_cluster ? {
+    enable_private_cluster             = true
+    enable_private_cluster_public_fqdn = false
+    private_dns_zone                   = local.hub_outputs.private_dns_zone_ids["privatelink.${var.location}.azmk8s.io"]
+  } : null
+
+  # Managed identities
+  managed_identities = {
+    user_assigned_resource_ids = [
+      azurerm_user_assigned_identity.aks_control_plane.id
+    ]
+  }
+
+  # Kubelet identity profile
+  identity_profile = {
+    kubeletidentity = {
+      resource_id = azurerm_user_assigned_identity.aks_kubelet.id
+    }
+  }
+
+  # Azure Policy addon
+  addon_profile_azure_policy = var.enable_azure_policy ? {
+    enabled = true
+  } : null
+
+  # OIDC Issuer profile for workload identity
+  oidc_issuer_profile = var.enable_workload_identity ? {
+    enabled = true
+  } : null
+
+  # Security profile for workload identity
+  security_profile = var.enable_workload_identity ? {
+    workload_identity = {
+      enabled = true
+    }
+  } : null
+
+  # Container Insights addon
+  addon_profile_oms_agent = var.enable_monitoring ? {
+    enabled = true
+    config = {
+      log_analytics_workspace_resource_id = local.hub_outputs.log_analytics_workspace_id
+    }
+  } : null
+
+  # Ingress profile with Web App Routing addon (Azure-managed NGINX ingress controller)
+  # Note: This enables the add-on at the infrastructure level. Kubernetes manifests
+  # (NginxIngressController CRD) must be applied post-deployment to configure the
+  # internal load balancer. This two-step approach keeps infrastructure provisioning
+  # separate from K8s configuration and avoids Terraform's kubernetes provider
+  # dependency on cluster credentials. See manifests/nginx-internal-controller.yaml
+  # and README.md for post-deployment steps.
+  ingress_profile = var.enable_web_app_routing ? {
+    web_app_routing = {
+      enabled               = true
+      dns_zone_resource_ids = var.web_app_routing_dns_zone_ids
+    }
+  } : null
+
+  # Additional agent pools
+  agent_pools = {
+    user = {
+      name                      = "user"
+      vm_size                   = var.user_node_pool_size
+      count_of                  = var.user_node_pool_count
+      vnet_subnet_id            = azurerm_subnet.aks_nodes.id
+      enable_auto_scaling       = false
+      mode                      = "User"
+      os_disk_size_gb           = 30
+      os_type                   = "Linux"
+      enable_encryption_at_host = true
+      node_labels = {
+        workload = "user"
+      }
+    }
+  }
+
+  enable_telemetry = true
+  tags             = local.common_tags
+
+  depends_on = [
+    time_sleep.wait_for_rbac,
+    azurerm_subnet_route_table_association.aks_nodes,
+    azurerm_subnet_route_table_association.aks_system,
+    azurerm_subnet_network_security_group_association.aks_nodes,
+    azurerm_firewall_policy_rule_collection_group.spoke
+  ]
+}
+
+# ===========================
+# Azure Container Registry
+# ===========================
+
+module "acr" {
+  source  = "Azure/avm-res-containerregistry-registry/azurerm"
+  version = "~> 0.3"
+
+  name                = "acr${var.environment}${local.location_code}${random_string.acr_suffix.result}"
+  location            = var.location
+  resource_group_name = local.spoke_rg_name
+
+  sku = "Premium" # Required for private endpoints
+
+  # Private endpoint configuration
+  private_endpoints = length(local.hub_outputs.private_dns_zone_ids) > 0 ? {
+    acr_private_endpoint = {
+      name                            = "pe-acr-${var.environment}-${local.location_code}"
+      subnet_resource_id              = azurerm_subnet.management.id
+      private_dns_zone_resource_ids   = [local.hub_outputs.private_dns_zone_ids["privatelink.azurecr.io"]]
+      private_service_connection_name = "psc-acr-${var.environment}-${local.location_code}"
+    }
+  } : {}
+
+  # Grant AKS kubelet identity pull access
+  role_assignments = {
+    aks_pull = {
+      role_definition_id_or_name = "AcrPull"
+      principal_id               = azurerm_user_assigned_identity.aks_kubelet.principal_id
+    }
+  }
+
+  enable_telemetry = true
+  tags             = local.common_tags
+}
+
+resource "random_string" "acr_suffix" {
+  length  = 6
+  special = false
+  upper   = false
+}
+
+# ===========================
+# Azure Key Vault
+# ===========================
+
+module "key_vault" {
+  source  = "Azure/avm-res-keyvault-vault/azurerm"
+  version = "~> 0.9"
+
+  name                = "kv-${var.environment}-${local.location_code}-${random_string.kv_suffix.result}"
+  location            = var.location
+  resource_group_name = local.spoke_rg_name
+  tenant_id           = data.azurerm_client_config.current.tenant_id
+
+  sku_name = "standard"
+
+  # Enable for AKS workload integration
+  enabled_for_deployment          = true
+  enabled_for_disk_encryption     = true
+  enabled_for_template_deployment = true
+  purge_protection_enabled        = true
+  soft_delete_retention_days      = 7
+
+  # Network access
+  network_acls = {
+    default_action = "Deny"
+    bypass         = "AzureServices"
+    ip_rules       = []
+  }
+
+  # Private endpoint configuration
+  private_endpoints = length(local.hub_outputs.private_dns_zone_ids) > 0 ? {
+    kv_private_endpoint = {
+      name                            = "pe-kv-${var.environment}-${local.location_code}"
+      subnet_resource_id              = azurerm_subnet.management.id
+      private_dns_zone_resource_ids   = [local.hub_outputs.private_dns_zone_ids["privatelink.vaultcore.azure.net"]]
+      private_service_connection_name = "psc-kv-${var.environment}-${local.location_code}"
+    }
+  } : {}
+
+  # Grant AKS control plane identity access
+  role_assignments = {
+    aks_secrets_user = {
+      role_definition_id_or_name = "Key Vault Secrets User"
+      principal_id               = azurerm_user_assigned_identity.aks_control_plane.principal_id
+    }
+  }
+
+  enable_telemetry = true
+  tags             = local.common_tags
+}
+
+resource "random_string" "kv_suffix" {
+  length  = 6
+  special = false
+  upper   = false
+}
+
+data "azurerm_client_config" "current" {}
+
+# ===========================
+# Spoke Jump Box VM
+# ===========================
+
+resource "azurerm_network_interface" "spoke_jumpbox" {
+  name                = "nic-jumpbox-spoke-${var.location_code}-${var.environment}"
+  location            = var.location
+  resource_group_name = local.spoke_rg_name
+
+  ip_configuration {
+    name                          = "internal"
+    subnet_id                     = azurerm_subnet.management.id
+    private_ip_address_allocation = "Dynamic"
+  }
+
+  tags = var.tags
+}
+
+resource "azurerm_linux_virtual_machine" "spoke_jumpbox" {
+  name                = "vm-jumpbox-spoke-${var.location_code}-${var.environment}"
+  location            = var.location
+  resource_group_name = local.spoke_rg_name
+  size                = "Standard_D2s_v3"
+  admin_username      = var.admin_username
+
+  network_interface_ids = [
+    azurerm_network_interface.spoke_jumpbox.id,
+  ]
+
+  admin_ssh_key {
+    username   = var.admin_username
+    public_key = data.azurerm_key_vault_secret.ssh_public_key.value
+  }
+
+  os_disk {
+    caching              = "ReadWrite"
+    storage_account_type = "Premium_LRS"
+  }
+
+  source_image_reference {
+    publisher = "Canonical"
+    offer     = "0001-com-ubuntu-server-jammy"
+    sku       = "22_04-lts-gen2"
+    version   = "latest"
+  }
+
+  custom_data = base64encode(<<-EOT
+    #!/bin/bash
+    set -e
+    
+    # Update system
+    apt-get update
+    apt-get upgrade -y
+    
+    # Install Azure CLI using Microsoft's apt repository (secure method)
+    apt-get install -y ca-certificates curl apt-transport-https lsb-release gnupg
+    mkdir -p /etc/apt/keyrings
+    curl -sLS https://packages.microsoft.com/keys/microsoft.asc | 
+      gpg --dearmor | 
+      tee /etc/apt/keyrings/microsoft.gpg > /dev/null
+    chmod go+r /etc/apt/keyrings/microsoft.gpg
+    
+    AZ_DIST=$(lsb_release -cs)
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/azure-cli/ $AZ_DIST main" | 
+      tee /etc/apt/sources.list.d/azure-cli.list
+    
+    apt-get update
+    apt-get install -y azure-cli
+    
+    # Install kubectl using official apt repository (secure method)
+    curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key | 
+      gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+    chmod 644 /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+    
+    echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /" | 
+      tee /etc/apt/sources.list.d/kubernetes.list
+    chmod 644 /etc/apt/sources.list.d/kubernetes.list
+    
+    apt-get update
+    apt-get install -y kubectl
+    
+    # Install Helm using official apt repository (secure method)
+    curl https://baltocdn.com/helm/signing.asc | 
+      gpg --dearmor | 
+      tee /usr/share/keyrings/helm.gpg > /dev/null
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/helm.gpg] https://baltocdn.com/helm/stable/debian/ all main" | 
+      tee /etc/apt/sources.list.d/helm-stable-debian.list
+    
+    apt-get update
+    apt-get install -y helm
+    
+    # Install k9s from GitHub releases (pinned version with checksum verification)
+    K9S_VERSION="v0.32.4"
+    K9S_CHECKSUM="2e014bb2bc8b87661b2c333c97ba0a8c581c3bc1cfa3d0c7815e5385c914d06e"
+    
+    cd /tmp
+    wget -q "https://github.com/derailed/k9s/releases/download/$${K9S_VERSION}/k9s_Linux_amd64.tar.gz"
+    echo "$${K9S_CHECKSUM}  k9s_Linux_amd64.tar.gz" | sha256sum -c -
+    tar -xzf k9s_Linux_amd64.tar.gz
+    mv k9s /usr/local/bin/
+    chmod +x /usr/local/bin/k9s
+    rm k9s_Linux_amd64.tar.gz
+    
+    # Install additional tools
+    apt-get install -y jq vim curl wget git
+    
+    echo "Spoke jump box provisioning complete" >> /var/log/jumpbox-setup.log
+  EOT
+  )
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  tags = merge(var.tags, {
+    Purpose = "Jump Box - Spoke Management"
+  })
+}
+
+# Grant jump box VM AKS user role
+resource "azurerm_role_assignment" "jumpbox_aks_user" {
+  scope                = module.aks_cluster.resource_id
+  role_definition_name = "Azure Kubernetes Service Cluster User Role"
+  principal_id         = azurerm_linux_virtual_machine.spoke_jumpbox.identity[0].principal_id
+}
+
+# ===========================
+# AKS Diagnostic Settings
+# ===========================
+
+resource "azurerm_monitor_diagnostic_setting" "aks" {
+  count = local.hub_outputs.log_analytics_workspace_id != null ? 1 : 0
+
+  name                       = "diag-aks-${var.environment}-${local.location_code}"
+  target_resource_id         = module.aks_cluster.resource_id
+  log_analytics_workspace_id = local.hub_outputs.log_analytics_workspace_id
+
+  enabled_log {
+    category = "kube-apiserver"
+  }
+
+  enabled_log {
+    category = "kube-controller-manager"
+  }
+
+  enabled_log {
+    category = "kube-scheduler"
+  }
+
+  enabled_log {
+    category = "kube-audit"
+  }
+
+  enabled_log {
+    category = "cluster-autoscaler"
+  }
+
+  enabled_metric {
+    category = "AllMetrics"
+  }
+}
+
+# ===========================
+# Spoke Firewall Rules
+# ===========================
+
+# Spoke-specific firewall rule collection group (priority ≥ 500)
+# Hub owns baseline rules (100-499); spoke owns application-specific rules
+resource "azurerm_firewall_policy_rule_collection_group" "spoke" {
+  count              = local.hub_outputs.firewall_policy_id != null ? 1 : 0
+  name               = "spoke-aks-${var.environment}"
+  firewall_policy_id = local.hub_outputs.firewall_policy_id
+  priority           = 500
+
+  # Spoke-specific Ubuntu package repositories
+  # These support jump box and any Ubuntu-based workloads
+  application_rule_collection {
+    name     = "spoke-ubuntu-packages"
+    priority = 510
+    action   = "Allow"
+
+    rule {
+      name = "ubuntu-package-repositories"
+      protocols {
+        type = "Http"
+        port = 80
+      }
+      source_addresses = [
+        local.spoke_vnet_cidr
+      ]
+      destination_fqdns = [
+        "security.ubuntu.com",
+        "azure.archive.ubuntu.com",
+        "changelogs.ubuntu.com"
+      ]
+    }
+
+    rule {
+      name = "ubuntu-snapshot-service"
+      protocols {
+        type = "Https"
+        port = 443
+      }
+      source_addresses = [
+        local.spoke_vnet_cidr
+      ]
+      destination_fqdns = [
+        "snapshot.ubuntu.com"
+      ]
+    }
+  }
+}

@@ -1,0 +1,38 @@
+# CI/CD Landing Zone Production Environment Variables
+# ============================================================================
+# INSTRUCTIONS:
+# 1. Copy this file to prod.tfvars and commit it to version control
+# 2. Replace placeholder values with your actual configuration
+# 3. KEEP THIS FILE SANITIZED: do not put secrets or credentials here
+#    Store secrets in pipeline variables and/or Azure Key Vault instead
+# ============================================================================
+
+# Azure subscription ID
+# Obtain from: az account show --query id
+subscription_id = "your-subscription-id-here"
+
+environment = "prod"
+
+# CI/CD resource group and VNet (self-contained, not hub-managed)
+cicd_resource_group_name = "rg-cicd-eus2-prod"
+cicd_vnet_name           = "vnet-cicd-prod-eus2"
+cicd_vnet_address_space  = ["10.2.0.0/24"]
+
+# Azure DevOps configuration
+ado_organization_url = "https://dev.azure.com/your-org"
+ado_agent_pool_name  = "aci-cicd-pool"
+aci_agent_count      = 2
+
+# Subnet CIDRs (within the CI/CD VNet address space 10.2.0.0/24)
+aci_agents_subnet_cidr     = "10.2.0.0/27"
+aci_agents_acr_subnet_cidr = "10.2.0.32/29"
+
+# Platform Key Vault ID (created by setup-ado-pipeline.sh)
+# Obtain from: az keyvault show --name <kv-name> --query id
+platform_key_vault_id = "/subscriptions/<sub-id>/resourceGroups/<rg>/providers/Microsoft.KeyVault/vaults/<kv-name>"
+
+# Resource tags
+tags = {
+  Purpose   = "CI/CD Pipeline Agents"
+  ManagedBy = "Terraform"
+}

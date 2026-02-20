@@ -1,0 +1,163 @@
+# Hub Infrastructure Deployment Pipeline
+# Deploys hub Terraform code per .github/instructions/hub-deploy.instructions.md
+#
+# Prerequisites (one-time manual setup):
+#   1. Run scripts/setup-ado-pipeline.sh to create:
+#      - ARM service connection with Workload Identity Federation
+#      - Platform Key Vault with SSH keys
+#   2. Set pipeline variable PLATFORM_KV_ID to the platform Key Vault resource ID
+#      - Go to Pipelines → hub-deploy → Edit → Variables → New variable
+#      - Name: PLATFORM_KV_ID, Value: /subscriptions/.../resourceGroups/.../providers/Microsoft.KeyVault/vaults/...
+#
+# Hub pipeline defaults to self-hosted agents (Container App Jobs in CI/CD VNet).
+# Hub+Spoke state SA is public at bootstrap; lock down after CI/CD PE + DNS are in place.
+# Set USE_SELF_HOSTED=false in ADO pipeline variables if agents don't exist yet.
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - infra/terraform/hub/**
+
+parameters:
+  - name: useSelfHosted
+    displayName: 'Use self-hosted agents'
+    type: boolean
+    default: true
+
+variables:
+  - name: TF_WORKING_DIR
+    value: 'infra/terraform/hub'
+  - name: ENVIRONMENT
+    value: 'prod'
+  - name: ARM_USE_OIDC
+    value: 'true'
+  - name: TF_VAR_FILE
+    value: 'prod.tfvars'
+  - name: BACKEND_CONFIG
+    value: 'backend-prod.tfbackend'
+
+stages:
+  - stage: Validate
+    displayName: 'Terraform Validate'
+    jobs:
+      - job: Validate
+        displayName: 'Format & Validate'
+        pool:
+          ${{ if eq(parameters.useSelfHosted, true) }}:
+            name: 'aci-cicd-pool'
+          ${{ else }}:
+            vmImage: 'ubuntu-latest'
+        steps:
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: '1.14.5'
+
+          - task: AzureCLI@2
+            displayName: 'Terraform Init & Validate'
+            inputs:
+              azureSubscription: 'azure-hub-prod'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
+              inlineScript: |
+                # Export OIDC credentials for Terraform
+                export ARM_CLIENT_ID=$servicePrincipalId
+                export ARM_TENANT_ID=$tenantId
+                export ARM_OIDC_TOKEN=$idToken
+                export ARM_USE_OIDC=true
+                export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+
+                cd $(TF_WORKING_DIR)
+
+                terraform init -backend-config=$(BACKEND_CONFIG)
+                terraform fmt -check -recursive
+                terraform validate
+
+  - stage: Plan
+    displayName: 'Terraform Plan'
+    dependsOn: Validate
+    jobs:
+      - job: Plan
+        displayName: 'Generate Plan'
+        pool:
+          ${{ if eq(parameters.useSelfHosted, true) }}:
+            name: 'aci-cicd-pool'
+          ${{ else }}:
+            vmImage: 'ubuntu-latest'
+        steps:
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: '1.14.5'
+
+          - task: AzureCLI@2
+            displayName: 'Terraform Plan'
+            inputs:
+              azureSubscription: 'azure-hub-prod'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
+              inlineScript: |
+                export ARM_CLIENT_ID=$servicePrincipalId
+                export ARM_TENANT_ID=$tenantId
+                export ARM_OIDC_TOKEN=$idToken
+                export ARM_USE_OIDC=true
+                export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+
+                cd $(TF_WORKING_DIR)
+
+                terraform init -backend-config=$(BACKEND_CONFIG)
+                terraform plan \
+                  -var-file="$(TF_VAR_FILE)" \
+                  -var="platform_key_vault_id=$(PLATFORM_KV_ID)" \
+                  -out=tfplan \
+                  -input=false
+
+          - publish: $(TF_WORKING_DIR)/tfplan
+            artifact: tfplan
+            displayName: 'Publish Plan Artifact'
+
+  - stage: Apply
+    displayName: 'Terraform Apply'
+    dependsOn: Plan
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - job: Apply
+        displayName: 'Apply Infrastructure'
+        pool:
+          ${{ if eq(parameters.useSelfHosted, true) }}:
+            name: 'aci-cicd-pool'
+          ${{ else }}:
+            vmImage: 'ubuntu-latest'
+        steps:
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: '1.14.5'
+
+          - download: current
+            artifact: tfplan
+            displayName: 'Download Plan Artifact'
+
+          - task: AzureCLI@2
+            displayName: 'Terraform Apply'
+            inputs:
+              azureSubscription: 'azure-hub-prod'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
+              inlineScript: |
+                export ARM_CLIENT_ID=$servicePrincipalId
+                export ARM_TENANT_ID=$tenantId
+                export ARM_OIDC_TOKEN=$idToken
+                export ARM_USE_OIDC=true
+                export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+
+                cd $(TF_WORKING_DIR)
+
+                terraform init -backend-config=$(BACKEND_CONFIG)
+                terraform apply -input=false $(Pipeline.Workspace)/tfplan/tfplan

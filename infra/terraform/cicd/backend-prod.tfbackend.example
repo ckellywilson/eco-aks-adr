@@ -1,0 +1,8 @@
+# Example backend configuration for cicd prod environment.
+# Copy to backend-prod.tfbackend and replace placeholder values.
+# Per repo convention, backend-prod.tfbackend files are committed; never include secrets.
+resource_group_name  = "<terraform_state_resource_group_name>"
+storage_account_name = "<terraform_state_storage_account_name>"
+container_name       = "<terraform_state_container_name>"
+key                  = "terraform.tfstate"
+use_azuread_auth     = true
