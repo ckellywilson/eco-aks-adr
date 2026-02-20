@@ -89,6 +89,7 @@ Use Azure Verified Modules (AVM) where available. Always check the [AVM Module I
 |---|---|---|
 | CI/CD RG + VNet | Infrastructure container (self-created) | `azurerm_resource_group` + `azurerm_virtual_network` |
 | VNet Peering | Bidirectional hub ↔ CI/CD (conditional, requires hub) | `azurerm_virtual_network_peering` |
+| Spoke VNet Peering | Bidirectional CI/CD ↔ spoke (enables agents to reach private AKS) | `azurerm_virtual_network_peering` |
 | Subnets | Container App agents, ACR PE, State SA + KV PE | `azurerm_subnet` |
 | Container App Job ADO Agents | Self-hosted pipeline agents with KEDA auto-scaling (0 to N) | AVM `avm-ptn-cicd-agents-and-runners` |
 | CI/CD Agent UAMI | Agent authentication with ADO and platform KV | `azurerm_user_assigned_identity` |
@@ -150,6 +151,42 @@ resource "azurerm_virtual_network_peering" "hub_to_cicd" {
 ```
 
 **Note**: The CI/CD service principal needs `Network Contributor` on the hub VNet (or hub RG) to create the hub-to-CI/CD peering direction.
+
+### Spoke VNet Peering
+
+The CI/CD landing zone also creates **bidirectional peering with spoke VNets**. This is required because VNet peering is NOT transitive — even though CI/CD peers with the hub and the hub peers with each spoke, CI/CD cannot reach spoke resources (e.g., private AKS API server) without direct peering.
+
+Spoke peering is added at **Day 2** alongside hub integration, since the hub creates spoke VNets (when `hub_managed = true`), so spoke VNet IDs are available after the hub deploys.
+
+```hcl
+variable "spoke_vnet_ids" {
+  description = "Map of spoke VNet IDs for bidirectional peering (key = spoke name)"
+  type        = map(string)
+  default     = {}
+}
+
+resource "azurerm_virtual_network_peering" "cicd_to_spoke" {
+  for_each                  = var.spoke_vnet_ids
+  name                      = "peer-cicd-to-${each.key}"
+  resource_group_name       = azurerm_resource_group.cicd.name
+  virtual_network_name      = azurerm_virtual_network.cicd.name
+  remote_virtual_network_id = each.value
+  allow_forwarded_traffic   = true
+}
+
+resource "azurerm_virtual_network_peering" "spoke_to_cicd" {
+  for_each                  = var.spoke_vnet_ids
+  name                      = "peer-${each.key}-to-cicd"
+  resource_group_name       = regex("/resourceGroups/([^/]+)/", each.value)[0]
+  virtual_network_name      = regex("/virtualNetworks/([^/]+)$", each.value)[0]
+  remote_virtual_network_id = azurerm_virtual_network.cicd.id
+  allow_forwarded_traffic   = true
+}
+```
+
+**RBAC prerequisite**: The CI/CD service principal needs `Network Contributor` on each spoke VNet (or its RG) to create the spoke-to-CI/CD peering direction. The spoke SP (`azure-spoke-prod`) has `Contributor` at subscription scope, but the CI/CD SP also needs this permission since it creates both directions.
+
+**Scalability note**: Each new spoke requires a peering entry in `spoke_vnet_ids`. For environments with >5 spokes, consider migrating to [Azure Virtual WAN](https://learn.microsoft.com/en-us/azure/virtual-wan/virtual-wan-about) for native spoke-to-spoke transit.
 
 ### Hub Firewall Source Addresses
 
@@ -477,6 +514,7 @@ Phase 3: Hub deployment (hub pipeline — runs on self-hosted agents)
 
 Phase 4: CI/CD Day 2 (cicd pipeline — ⚠️ MUST use MS-hosted agents)
   └─→ Adds VNet peering (CI/CD ↔ hub), custom DNS (hub resolver IP)
+  └─→ Adds VNet peering (CI/CD ↔ spoke) — enables agents to reach private AKS API server
   └─→ Switches to hub DNS zones (ACR, blob, vault) — CI/CD zones removed
   └─→ Creates PE for Hub+Spoke SA (so self-hosted agents can reach hub/spoke state)
   └─→ ⚠️ VNet DNS + DNS zone changes trigger Container App Environment recreation
@@ -484,6 +522,8 @@ Phase 4: CI/CD Day 2 (cicd pipeline — ⚠️ MUST use MS-hosted agents)
 
 Phase 5: Spoke deployment (spoke pipeline — runs on self-hosted agents)
   └─→ AKS cluster, ACR, Key Vault, etc. (see spoke spec)
+  └─→ PostDeploy: kubectl apply NGINX internal controller manifest
+  └─→ Verify NGINX controller ready and internal LB has expected IP
 ```
 
 ### Bootstrap Sequence
@@ -496,9 +536,11 @@ The bootstrap-first pattern eliminates the chicken-and-egg problem. CI/CD deploy
 | 2 — ADO Registration | Manual | — | Register UAMI in `Project Collection Service Accounts` |
 | 3 — Hub | `hub-deploy` | **Self-hosted agents** (`aci-cicd-pool`) | Self-hosted agents now available |
 | 4 — CI/CD Day 2 | `cicd-deploy` | **MS-hosted agents** (`useSelfHosted=false`) | ⚠️ VNet/DNS changes recreate Container App Environment — self-hosted agents would self-destruct |
-| 5 — Spoke | `spoke-deploy` | **Self-hosted agents** (`aci-cicd-pool`) | Agents can reach private AKS API server |
+| 5 — Spoke | `spoke-deploy` | **Self-hosted agents** (`aci-cicd-pool`) | Agents can reach private AKS API server via CI/CD ↔ spoke peering |
 
-**Why the spoke uses self-hosted agents**: The spoke AKS cluster is private — its API server is only accessible from peered VNets. Microsoft-hosted agents cannot reach private endpoints. The CI/CD VNet is peered with the hub, which is peered with the spoke, enabling Container App Job agents to reach the AKS API server through the peered network.
+**Why the spoke uses self-hosted agents**: The spoke AKS cluster is private — its API server is only accessible from peered VNets. Microsoft-hosted agents cannot reach private endpoints. The CI/CD VNet is **directly peered with the spoke VNet** (added at Day 2), enabling Container App Job agents to reach the AKS API server for both Terraform operations and post-deployment `kubectl` commands (e.g., applying the NGINX internal controller manifest).
+
+**Why VNet peering is NOT transitive**: Even though CI/CD peers with the hub and the hub peers with the spoke, CI/CD cannot reach spoke resources through the hub. Azure VNet peering only adds system routes for directly peered VNets. Additionally, Container App delegated subnets do not support UDRs, ruling out hub-as-transit routing.
 
 ### Dependency Graph
 
@@ -508,8 +550,8 @@ CI/CD (MS-hosted, bootstrap) ──→ [Manual: Register UAMI in ADO]
 Hub (self-hosted)
   ↓
 CI/CD Day 2 (⚠️ MS-hosted — VNet/DNS changes recreate Container App Env)
-  ↓
-Spoke (self-hosted)
+  ↓                ↳ Adds hub peering + spoke peering + hub DNS zones
+Spoke (self-hosted) → PostDeploy: NGINX manifest via kubectl
 ```
 
 ---

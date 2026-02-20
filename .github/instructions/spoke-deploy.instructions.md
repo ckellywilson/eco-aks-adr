@@ -415,6 +415,8 @@ private_endpoints = {
 
 This keeps infrastructure provisioning separate from Kubernetes configuration and avoids the Terraform `kubernetes` provider dependency on cluster credentials.
 
+**Automated in pipeline**: The spoke pipeline (`spoke-deploy.yml`) includes a `PostDeploy` stage that automatically applies the NGINX manifest via `kubectl` after Terraform apply. The CI/CD self-hosted agents can reach the private AKS API server through direct CI/CD ↔ spoke VNet peering.
+
 ```hcl
 # Step 1: Terraform enables the add-on
 ingress_profile = {
@@ -614,8 +616,9 @@ Phase 2: Spoke deployment (this spec)
   └─→ Diagnostic settings
   └─→ Spoke firewall rule collection group (priority ≥ 500)
 
-Phase 3: Post-deployment (manual or CI/CD)
-  └─→ Apply NginxIngressController Kubernetes manifest
+Phase 3: Post-deployment (automated via spoke pipeline PostDeploy stage)
+  └─→ Apply NginxIngressController Kubernetes manifest via kubectl
+  └─→ Verify NGINX controller ready and internal LB IP assigned
   └─→ Verify DNS resolution from jump box
   └─→ Validate AKS connectivity
 ```

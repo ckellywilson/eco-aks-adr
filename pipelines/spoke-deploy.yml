@@ -145,7 +145,8 @@ stages:
                 terraform apply -input=false $(Pipeline.Workspace)/tfplan/tfplan
 
           - task: AzureCLI@2
-            displayName: 'Output Infrastructure Details'
+            displayName: 'Export Terraform Outputs'
+            name: tfOutputs
             inputs:
               azureSubscription: 'azure-spoke-prod'
               scriptType: 'bash'
@@ -161,14 +162,67 @@ stages:
                 cd $(TF_WORKING_DIR)
 
                 terraform init -backend-config=$(BACKEND_CONFIG)
-                
+
                 echo "=== Spoke Infrastructure Outputs ==="
                 terraform output -json
-                
+
+                # Export outputs as pipeline variables for PostDeploy stage
+                AKS_CLUSTER_NAME=$(terraform output -raw aks_cluster_name)
+                AKS_RG_NAME=$(terraform output -raw resource_group_name)
+                WEB_APP_ROUTING=$(terraform output -raw web_app_routing_enabled)
+
+                echo "##vso[task.setvariable variable=aksClusterName;isOutput=true]${AKS_CLUSTER_NAME}"
+                echo "##vso[task.setvariable variable=aksResourceGroup;isOutput=true]${AKS_RG_NAME}"
+                echo "##vso[task.setvariable variable=webAppRoutingEnabled;isOutput=true]${WEB_APP_ROUTING}"
+
+  - stage: PostDeploy
+    displayName: 'Apply Kubernetes Manifests'
+    dependsOn: Apply
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    variables:
+      aksClusterName: $[ stageDependencies.Apply.Apply.outputs['tfOutputs.aksClusterName'] ]
+      aksResourceGroup: $[ stageDependencies.Apply.Apply.outputs['tfOutputs.aksResourceGroup'] ]
+      webAppRoutingEnabled: $[ stageDependencies.Apply.Apply.outputs['tfOutputs.webAppRoutingEnabled'] ]
+    jobs:
+      - job: NginxDeploy
+        displayName: 'Deploy NGINX Internal Controller'
+        condition: eq(variables['webAppRoutingEnabled'], 'true')
+        steps:
+          - task: AzureCLI@2
+            displayName: 'Apply NGINX Internal Controller Manifest'
+            inputs:
+              azureSubscription: 'azure-spoke-prod'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
+              inlineScript: |
+                set -euo pipefail
+
+                echo "=== Getting AKS Credentials ==="
+                az aks get-credentials \
+                  --name "$(aksClusterName)" \
+                  --resource-group "$(aksResourceGroup)" \
+                  --overwrite-existing
+
+                echo "=== Applying NGINX Internal Controller Manifest ==="
+                kubectl apply -f $(TF_WORKING_DIR)/manifests/nginx-internal-controller.yaml
+
+                echo "=== Waiting for NginxIngressController to be ready ==="
+                # Wait up to 3 minutes for the controller to provision
+                for i in $(seq 1 18); do
+                  STATUS=$(kubectl get nginxingresscontroller nginx-internal -o jsonpath='{.status.controllerReadyReplicas}' 2>/dev/null || echo "0")
+                  if [ "$STATUS" != "0" ] && [ -n "$STATUS" ]; then
+                    echo "NGINX controller ready with $STATUS replicas"
+                    break
+                  fi
+                  echo "Waiting for NGINX controller... (attempt $i/18)"
+                  sleep 10
+                done
+
                 echo ""
-                echo "=== Post-Deployment Steps ==="
-                echo "1. Apply NGINX internal controller manifest:"
-                echo "   kubectl apply -f manifests/nginx-internal-controller.yaml"
+                echo "=== NGINX Ingress Controller Status ==="
+                kubectl get nginxingresscontroller nginx-internal -o wide 2>/dev/null || echo "Controller not yet available"
+
                 echo ""
-                echo "2. Verify AKS cluster access from jump box"
-                echo "3. See README.md for complete post-deployment checklist"
+                echo "=== App Routing System Services ==="
+                kubectl get svc -n app-routing-system 2>/dev/null || echo "No services found"
