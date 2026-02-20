@@ -177,8 +177,8 @@ resource "azurerm_virtual_network_peering" "cicd_to_spoke" {
 resource "azurerm_virtual_network_peering" "spoke_to_cicd" {
   for_each                  = var.spoke_vnet_ids
   name                      = "peer-${each.key}-to-cicd"
-  resource_group_name       = regex("/resourceGroups/([^/]+)/", each.value)[0]
-  virtual_network_name      = regex("/virtualNetworks/([^/]+)$", each.value)[0]
+  resource_group_name       = split("/", each.value)[4]
+  virtual_network_name      = split("/", each.value)[8]
   remote_virtual_network_id = azurerm_virtual_network.cicd.id
   allow_forwarded_traffic   = true
 }
