@@ -4,22 +4,13 @@
       "id": "ado_org",
       "type": "promptString",
       "description": "Azure DevOps organization name (e.g. 'modenv496195')"
-    },
-    {
-      "id": "ado_pat",
-      "type": "promptString",
-      "description": "Azure DevOps Personal Access Token",
-      "password": true
     }
   ],
   "servers": {
     "ado": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@azure-devops/mcp", "--authentication", "env", "${input:ado_org}"],
-      "env": {
-        "AZURE_DEVOPS_EXT_PAT": "${input:ado_pat}"
-      }
+      "args": ["-y", "@azure-devops/mcp", "--authentication", "env", "${input:ado_org}"]
     }
   }
 }
