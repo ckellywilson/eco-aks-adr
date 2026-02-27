@@ -116,9 +116,39 @@ After deploying with `deploy_cicd_agents = true` in the hub, ACI-based pipeline 
 
 ### Post-Deploy Setup (Manual)
 
-1. **Register UAMI in ADO**: Add the ACI agent UAMI as a service principal in your ADO organization
-2. **Grant pool access**: Give the UAMI Admin access on the agent pool
-3. **Switch pipeline pool**: Update pipeline YAML from `vmImage: 'ubuntu-latest'` to the self-hosted pool name
+> **Prerequisites:** You must be an **Organization Administrator** or **Project Collection Administrator** in Azure DevOps to complete these steps. Without these permissions, adding users and modifying the Project Collection Service Accounts group will silently fail.
+
+#### 1. Create the Agent Pool (if it doesn't already exist)
+
+Before registering the UAMI, confirm the `aci-cicd-pool` agent pool exists:
+
+- In ADO: **Organization Settings → Agent Pools → Add pool**
+  - Pool type: **Self-hosted**
+  - Name: `aci-cicd-pool`
+  - Grant access permission to all pipelines (or specific pipelines as needed)
+
+> If the pool was already created by `setup-ado-pipeline.sh`, skip this step.
+
+#### 2. Register UAMI in ADO
+
+- In ADO: **Organization Settings → Users → Add users**
+  - Search by the UAMI client ID (available from `terraform output agent_uami_client_id`)
+  - Access level: `Stakeholder`
+
+  > `Stakeholder` is sufficient for agent registration and consumes fewer ADO licenses than `Basic`.
+
+- In ADO: **Organization Settings → Permissions → Project Collection Service Accounts → Members → Add**
+  - Add the UAMI identity
+
+#### 3. Verify Agent Registration
+
+- In ADO: **Organization Settings → Agent Pools → `aci-cicd-pool` → Agents**
+  - A placeholder agent should appear (shows "Offline" when idle — expected with KEDA scale-to-zero)
+
+> **⚠️ Warning — if this step is skipped:**
+> - Container App Jobs will start but fail to authenticate with ADO
+> - Pipeline jobs targeting the `aci-cicd-pool` pool will remain queued indefinitely with no agents available
+> - The **Agents** tab in ADO for `aci-cicd-pool` will show no registered agents
 
 ---
 
